@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BLACK CORP — Thu chi &amp; Sheet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <span class="brand" aria-label="BLACK CORP">BLACK CORP</span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="view-login" class="panel login-panel">
+        <h1 class="panel-title">Đăng nhập quản trị</h1>
+        <p class="muted">Vui lòng đăng nhập để đồng bộ Google Sheet.</p>
+        <form id="form-login" class="form-stack">
+          <label class="field">
+            <span>Tài khoản</span>
+            <input type="text" name="username" autocomplete="username" required class="input" />
+          </label>
+          <label class="field">
+            <span>Mật khẩu</span>
+            <input type="password" name="password" autocomplete="current-password" required class="input" />
+          </label>
+          <p id="login-error" class="error" hidden></p>
+          <button type="submit" class="btn primary">Đăng nhập</button>
+        </form>
+      </section>
+
+      <section id="view-app" class="app-root" hidden>
+        <div class="toolbar">
+          <nav class="tabs" role="tablist" aria-label="Khu vực chính">
+            <button type="button" class="tab active" data-tab="tong_quan" role="tab" aria-selected="true">
+              Tổng quan
+            </button>
+            <button type="button" class="tab" data-tab="thu_chi" role="tab" aria-selected="false">Thu chi</button>
+            <button type="button" class="tab" data-tab="coc" role="tab" aria-selected="false">Tiền cọc</button>
+            <button type="button" class="tab" data-tab="cong_no" role="tab" aria-selected="false">Công nợ</button>
+            <button type="button" class="tab" data-tab="bao_cao" role="tab" aria-selected="false">Báo cáo</button>
+          </nav>
+          <div class="toolbar-actions">
+            <button type="button" id="btn-save" class="btn primary">Lưu lên Google Sheet</button>
+            <button type="button" id="btn-logout" class="btn ghost">Đăng xuất</button>
+          </div>
+        </div>
+        <p id="save-status" class="status" aria-live="polite"></p>
+
+        <div class="tab-panels">
+          <div class="tab-panel active" data-panel="tong_quan" role="tabpanel">
+            <h2 class="section-title">Tổng quan (TONG_QUAN)</h2>
+            <p class="muted small">
+              Dòng 1 là tiêu đề. Ô <strong>A2</strong>: dư đầu (nhập tay). <strong>B2, C2, D2</strong> tự tính khi lưu:
+              tổng cột B/C tab Cọc và tổng cột B tab Công nợ.
+            </p>
+            <div class="du-dau-doc-sheet" role="status" aria-live="polite">
+              <p class="du-dau-doc-label">Số dư đầu đọc từ Google Sheet (ô <strong>A2</strong> · tab <strong>TONG_QUAN</strong>) là:</p>
+              <p class="du-dau-doc-value" id="so-du-dau-doc-hien-thi">—</p>
+              <p class="du-dau-doc-hint muted small" id="so-du-dau-doc-raw" hidden></p>
+            </div>
+            <div class="grid-overview">
+              <label class="field">
+                <span>A2 — Dư đầu</span>
+                <input type="text" id="tq-a2" class="input" inputmode="decimal" />
+              </label>
+              <label class="field">
+                <span>B2 — Tổng cọc (Σ cột B · COC)</span>
+                <input type="text" id="tq-b2" class="input" readonly />
+              </label>
+              <label class="field">
+                <span>C2 — Nhận cọc (Σ cột C · COC)</span>
+                <input type="text" id="tq-c2" class="input" readonly />
+              </label>
+              <label class="field">
+                <span>D2 — Tổng công nợ (Σ cột B · CONG_NO)</span>
+                <input type="text" id="tq-d2" class="input" readonly />
+              </label>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="thu_chi" role="tabpanel" hidden>
+            <h2 class="section-title">Thu chi (THU_CHI)</h2>
+            <div class="table-wrap">
+              <table class="data-table" id="table-thu-chi">
+                <thead>
+                  <tr>
+                    <th>A — Ngày</th>
+                    <th>B — Thu</th>
+                    <th>C — Chi</th>
+                    <th class="col-act"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <button type="button" class="btn secondary" data-add-row="thu_chi">+ Thêm dòng</button>
+          </div>
+
+          <div class="tab-panel" data-panel="coc" role="tabpanel" hidden>
+            <h2 class="section-title">Tiền cọc (COC)</h2>
+            <div class="table-wrap">
+              <table class="data-table" id="table-coc">
+                <thead>
+                  <tr>
+                    <th>A — Ngày</th>
+                    <th>B — Thu</th>
+                    <th>C — Chi</th>
+                    <th>D — Ghi chú</th>
+                    <th class="col-act"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <button type="button" class="btn secondary" data-add-row="coc">+ Thêm dòng</button>
+          </div>
+
+          <div class="tab-panel" data-panel="cong_no" role="tabpanel" hidden>
+            <h2 class="section-title">Công nợ (CONG_NO)</h2>
+            <div class="table-wrap">
+              <table class="data-table" id="table-cong-no">
+                <thead>
+                  <tr>
+                    <th>A — Tên</th>
+                    <th>B — Tiền nợ</th>
+                    <th class="col-act"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <button type="button" class="btn secondary" data-add-row="cong_no">+ Thêm dòng</button>
+          </div>
+
+          <div class="tab-panel" data-panel="bao_cao" role="tabpanel" hidden>
+            <h2 class="section-title">Báo cáo tổng quan thu chi</h2>
+            <div class="report-cards">
+              <div class="card">
+                <h3>Số dư sau thu chi</h3>
+                <p class="card-value" id="rep-sodu">—</p>
+                <p class="muted small">
+                  Công thức: <strong>A2</strong> + cột <strong>Thu</strong> − cột <strong>Chi</strong> của
+                  <strong>dòng dữ liệu cuối cùng</strong> trong THU_CHI (ô mới nhập).
+                </p>
+              </div>
+              <div class="card">
+                <h3>A2 — Dư đầu (nhập)</h3>
+                <p class="card-value" id="rep-a2">—</p>
+              </div>
+              <div class="card">
+                <h3>B2 — Tổng cọc</h3>
+                <p class="card-value" id="rep-b2">—</p>
+              </div>
+              <div class="card">
+                <h3>C2 — Nhận cọc</h3>
+                <p class="card-value" id="rep-c2">—</p>
+              </div>
+              <div class="card">
+                <h3>D2 — Tổng công nợ</h3>
+                <p class="card-value" id="rep-d2">—</p>
+              </div>
+            </div>
+            <h3 class="subsection-title">Theo ngày</h3>
+            <div class="table-wrap">
+              <table class="data-table" id="table-report-day">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Tổng thu</th>
+                    <th>Tổng chi</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <h3 class="subsection-title">Theo tháng</h3>
+            <div class="table-wrap">
+              <table class="data-table" id="table-report-month">
+                <thead>
+                  <tr>
+                    <th>Tháng</th>
+                    <th>Tổng thu</th>
+                    <th>Tổng chi</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
