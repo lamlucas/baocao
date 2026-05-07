@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>BLACK CORP — Thu chi &amp; Sheet</title>
+    <title>BLACK CORP</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,25 +15,25 @@
   <body>
     <header class="topbar">
       <div class="topbar-inner">
-        <span class="brand" aria-label="BLACK CORP">BLACK CORP</span>
+        <span class="brand" aria-label="BLACK CORP ®">BLACK CORP®</span>
       </div>
     </header>
 
     <main class="shell">
       <section id="view-login" class="panel login-panel">
-        <h1 class="panel-title">Đăng nhập quản trị</h1>
-        <p class="muted">Vui lòng đăng nhập để đồng bộ Google Sheet.</p>
+        <h1 class="panel-title">Đăng nhập</h1>
+        <p class="muted">BLACK CORP®</p>
         <form id="form-login" class="form-stack">
           <label class="field">
-            <span>Tài khoản</span>
+            <span>Admin</span>
             <input type="text" name="username" autocomplete="username" required class="input" />
           </label>
           <label class="field">
-            <span>Mật khẩu</span>
+            <span>Password</span>
             <input type="password" name="password" autocomplete="current-password" required class="input" />
           </label>
           <p id="login-error" class="error" hidden></p>
-          <button type="submit" class="btn primary">Đăng nhập</button>
+          <button type="submit" class="btn primary">Login</button>
         </form>
       </section>
 
@@ -49,8 +49,8 @@
             <button type="button" class="tab" data-tab="bao_cao" role="tab" aria-selected="false">Báo cáo</button>
           </nav>
           <div class="toolbar-actions">
-            <button type="button" id="btn-save" class="btn primary">Lưu lên Google Sheet</button>
-            <button type="button" id="btn-logout" class="btn ghost">Đăng xuất</button>
+            <button type="button" id="btn-save" class="btn primary">Save</button>
+            <button type="button" id="btn-logout" class="btn ghost">Log Out</button>
           </div>
         </div>
         <p id="save-status" class="status" aria-live="polite"></p>
