@@ -1,0 +1,14 @@
+# Cloudflare Pages — đặt Secrets trên Dashboard hoặc: wrangler pages secret put ...
+name = "black-corp-sheets"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "public"
+
+[vars]
+SPREADSHEET_ID_MAIN = "1IikVlW74zW54b6b7n1a0ko0MxIQsr_qMH6IR9XNtXpE"
+SPREADSHEET_ID_DEBT_SALES = "1JbUXSQ3yvy48ofmyedzp1yZTtK0k2-FJeOQFM0dnL98"
+ADMIN_USERNAME = "Black7777"
+
+# Tạo file .dev.vars (không commit) cho local:
+# ADMIN_PASSWORD=...
+# SESSION_SECRET=chuỗi-ngẫu-nhiên-dài
+# GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
