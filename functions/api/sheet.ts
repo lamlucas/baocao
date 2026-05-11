@@ -4,6 +4,7 @@ import {
   bienDongE2,
   buildThuChiPaddedMatrix,
   latestThuChiRow,
+  normalizeBanDaoDataRow,
   normalizeThuChiDataRow,
   num,
   padMatrix,
@@ -113,7 +114,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const thuChiData = tcBody.length > 1 ? tcBody.slice(1).map(normalizeThuChiDataRow) : [];
   const cocData = cocRaw.length > 1 ? parseRows(cocRaw.slice(1).map(stringifySheetRow), 4) : [];
   const congNoData = cn.length > 1 ? parseRows(cn.slice(1), 2) : [];
-  const banDaoData = bdRaw.length > 1 ? parseRows(bdRaw.slice(1).map(stringifySheetRow), 6) : [];
+  const banDaoData = bdRaw.length > 1 ? bdRaw.slice(1).map(normalizeBanDaoDataRow) : [];
 
   const sumCocB = cocData.reduce((s, r) => s + num(r[1]), 0);
   const sumCocC = cocData.reduce((s, r) => s + num(r[2]), 0);

@@ -74,6 +74,34 @@ export function normalizeThuChiDataRow(cells: unknown[]): string[] {
   return [ngay, thu, chi, ghiChu];
 }
 
+function numericOrText(cell: unknown): string {
+  if (cell == null) return "";
+  if (typeof cell === "number" && Number.isFinite(cell)) return String(cell);
+  if (typeof cell === "boolean") return cell ? "TRUE" : "FALSE";
+  return String(cell).trim();
+}
+
+/** Chuẩn hóa một dòng BAN_DAO sau batchGet UNFORMATTED: cột A (ngày) đổi serial → YYYY-MM-DD. */
+export function normalizeBanDaoDataRow(cells: unknown[]): string[] {
+  const row = [...cells];
+  while (row.length < 6) row.push("");
+  const a = row[0];
+  let ngay = "";
+  if (typeof a === "number" && Number.isFinite(a)) {
+    ngay = sheetsSerialToIsoDate(a);
+  } else {
+    ngay = String(a ?? "").trim();
+  }
+  return [
+    ngay,
+    String(row[1] ?? "").trim(),
+    numericOrText(row[2]),
+    numericOrText(row[3]),
+    numericOrText(row[4]),
+    numericOrText(row[5]),
+  ];
+}
+
 /** Chuẩn bị ma trận ghi Sheet: giữ kiểu number cho ô số (B, C) để tránh locale. */
 export function padMatrix(rows: (string | number)[][], cols: number): (string | number)[][] {
   const out = rows.map((r) =>
