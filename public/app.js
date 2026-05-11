@@ -44,11 +44,25 @@ function rowBanDao(r) {
 }
 
 const REVEAL_KEY = "bc_reveal_balance";
+const THU_CHI_E_REVEAL_KEY = "bc_reveal_thu_chi_e";
 function isRevealed() {
   return sessionStorage.getItem(REVEAL_KEY) === "1";
 }
+function isThuChiERevealed() {
+  return sessionStorage.getItem(THU_CHI_E_REVEAL_KEY) === "1";
+}
 function syncSensitiveRevealClass() {
   document.body.classList.toggle("bc-sensitive-revealed", isRevealed());
+}
+
+function setThuChiERevealed(v) {
+  if (v) sessionStorage.setItem(THU_CHI_E_REVEAL_KEY, "1");
+  else sessionStorage.removeItem(THU_CHI_E_REVEAL_KEY);
+  const btnRevealThuChiE = $("#btn-reveal-thu-chi-e");
+  const btnHideThuChiE = $("#btn-hide-thu-chi-e");
+  if (btnRevealThuChiE) btnRevealThuChiE.hidden = v;
+  if (btnHideThuChiE) btnHideThuChiE.hidden = !v;
+  renderThuChi();
 }
 
 function setRevealed(v) {
@@ -73,10 +87,6 @@ function setRevealed(v) {
   const btnHideBc = $("#btn-hide-balance-bao-cao");
   if (btnRevealBc) btnRevealBc.hidden = v;
   if (btnHideBc) btnHideBc.hidden = !v;
-  const btnRevealThuChiE = $("#btn-reveal-thu-chi-e");
-  const btnHideThuChiE = $("#btn-hide-thu-chi-e");
-  if (btnRevealThuChiE) btnRevealThuChiE.hidden = v;
-  if (btnHideThuChiE) btnHideThuChiE.hidden = !v;
   capNhatHienThiSoDuDauDoc();
   capNhatHienThiBienDong();
   renderThuChi();
@@ -136,7 +146,7 @@ function cellBienDongDisplay(raw) {
 function renderThuChi() {
   const tb = tbody("table-thu-chi");
   tb.innerHTML = "";
-  const showE = isRevealed();
+  const showE = isThuChiERevealed();
   state.thuChi.forEach((r) => {
     const tr = document.createElement("tr");
     const eHtml = showE
@@ -549,6 +559,7 @@ async function main() {
   activateTab("tong_quan");
   bindOverviewInput();
   setRevealed(isRevealed());
+  setThuChiERevealed(isThuChiERevealed());
 
   async function onRevealBalanceClick() {
     const p = prompt("Nhập mật khẩu để hiện Số dư đầu:");
@@ -560,12 +571,22 @@ async function main() {
       alert(e.body?.error || e.message || "Sai mật khẩu.");
     }
   }
+  async function onRevealThuChiEClick() {
+    const p = prompt("Nhập mật khẩu để hiện Biến động (E):");
+    if (!p) return;
+    try {
+      await api("/api/reveal-balance", { method: "POST", body: JSON.stringify({ password: p }) });
+      setThuChiERevealed(true);
+    } catch (e) {
+      alert(e.body?.error || e.message || "Sai mật khẩu.");
+    }
+  }
   $("#btn-reveal-balance").addEventListener("click", onRevealBalanceClick);
   $("#btn-hide-balance").addEventListener("click", () => setRevealed(false));
   $("#btn-reveal-balance-bao-cao")?.addEventListener("click", onRevealBalanceClick);
   $("#btn-hide-balance-bao-cao")?.addEventListener("click", () => setRevealed(false));
-  $("#btn-reveal-thu-chi-e")?.addEventListener("click", onRevealBalanceClick);
-  $("#btn-hide-thu-chi-e")?.addEventListener("click", () => setRevealed(false));
+  $("#btn-reveal-thu-chi-e")?.addEventListener("click", onRevealThuChiEClick);
+  $("#btn-hide-thu-chi-e")?.addEventListener("click", () => setThuChiERevealed(false));
 
   $("#form-login").addEventListener("submit", async (ev) => {
     ev.preventDefault();
