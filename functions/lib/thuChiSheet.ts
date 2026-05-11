@@ -55,10 +55,10 @@ export function stringifySheetRow(cells: unknown[]): string[] {
   });
 }
 
-/** Chuẩn hóa một dòng THU_CHI sau batchGet UNFORMATTED (cột E = kết quả công thức, kiểu số). */
+/** Chuẩn hóa một dòng THU_CHI sau batchGet UNFORMATTED. */
 export function normalizeThuChiDataRow(cells: unknown[]): string[] {
   const row = [...cells];
-  while (row.length < 5) row.push("");
+  while (row.length < 4) row.push("");
   const a = row[0];
   let ngay = "";
   if (typeof a === "number" && Number.isFinite(a)) {
@@ -71,16 +71,10 @@ export function normalizeThuChiDataRow(cells: unknown[]): string[] {
   const ch = row[2];
   const chi = typeof ch === "number" && Number.isFinite(ch) ? String(ch) : String(ch ?? "").trim();
   const ghiChu = String(row[3] ?? "").trim();
-  const e = row[4];
-  const bienDong =
-    typeof e === "number" && Number.isFinite(e) ? String(e) : String(e ?? "").trim();
-  return [ngay, thu, chi, ghiChu, bienDong];
+  return [ngay, thu, chi, ghiChu];
 }
 
-/**
- * Chuẩn bị ma trận ghi Sheet: giữ kiểu number cho ô số (B, C) để tránh locale;
- * cột E là công thức: dòng 2 = dư đầu (TONG_QUAN A2) + Thu - Chi; các dòng sau = E trên + Thu - Chi.
- */
+/** Chuẩn bị ma trận ghi Sheet: giữ kiểu number cho ô số (B, C) để tránh locale. */
 export function padMatrix(rows: (string | number)[][], cols: number): (string | number)[][] {
   const out = rows.map((r) =>
     r.map((c) => {
@@ -107,20 +101,6 @@ export function parseRows(rows: string[][], cols: number): string[][] {
   });
 }
 
-/**
- * Công thức cột E theo số dòng trên Sheet (1-based). Dòng 1 = tiêu đề; dữ liệu từ dòng 2.
- * Luôn dùng tham chiếu tuyệt đối số dòng (ví dụ =E2+B3-C3), không dùng ký hiệu kiểu {n}.
- */
-export function thuChiBalanceFormula(sheetRow: number): string {
-  if (sheetRow <= 1) return "";
-  if (sheetRow === 2) {
-    return "='TONG_QUAN'!$A$2+B2-C2";
-  }
-  const prev = String(sheetRow - 1);
-  const cur = String(sheetRow);
-  return "=E" + prev + "+B" + cur + "-C" + cur;
-}
-
 export function isThuChiModelEmpty(m: {
   ngay: string;
   thu: string;
@@ -139,21 +119,17 @@ export function trimTrailingEmptyThuChiModels(
   return o;
 }
 
-/**
- * Ma trận tab THU_CHI: header + dòng dữ liệu (A–D + công thức E giống kéo fill xuống tới dòng có dữ liệu cuối),
- * phần pad phía dưới để trống cả E để xóa công thức cũ và giảm nhiễu.
- */
+/** Ma trận tab THU_CHI: header + dòng dữ liệu A-D, phần pad phía dưới để trống. */
 export function buildThuChiPaddedMatrix(
   rows: { ngay: string; thu: string; chi: string; ghiChu: string }[],
 ): (string | number)[][] {
-  const header: (string | number)[] = ["Ngày", "Thu", "Chi", "Ghi chú", "Balance fluctuations"];
+  const header: (string | number)[] = ["Ngày", "Thu", "Chi", "Ghi chú"];
   const out: (string | number)[][] = [header];
   const trimmed = trimTrailingEmptyThuChiModels(rows);
   const dataCount = trimmed.length;
   const totalBody = Math.max(THU_CHI_PAD_ROWS - 1, Math.max(1, dataCount));
 
   for (let i = 0; i < totalBody; i++) {
-    const sheetRow = i + 2;
     if (i < dataCount) {
       const model = trimmed[i]!;
       const ngay = model.ngay ?? "";
@@ -162,11 +138,11 @@ export function buildThuChiPaddedMatrix(
       const ghiChu = model.ghiChu ?? "";
       const thuCell: string | number = thu.trim() === "" ? "" : num(thu);
       const chiCell: string | number = chi.trim() === "" ? "" : num(chi);
-      out.push([ngay, thuCell, chiCell, ghiChu, thuChiBalanceFormula(sheetRow)]);
+      out.push([ngay, thuCell, chiCell, ghiChu]);
     } else if (dataCount === 0 && i === 0) {
-      out.push(["", "", "", "", thuChiBalanceFormula(2)]);
+      out.push(["", "", "", ""]);
     } else {
-      out.push(["", "", "", "", ""]);
+      out.push(["", "", "", ""]);
     }
   }
   return out;

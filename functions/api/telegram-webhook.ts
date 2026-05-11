@@ -121,7 +121,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const rangesMain = [
       `'${SHEET_TQ}'!A1:E2`,
-      `'${SHEET_TC}'!A1:E2000`,
+      `'${SHEET_TC}'!A1:D2000`,
       `'${SHEET_COC}'!A1:D2000`,
     ];
     const batchMain = await sheetsBatchGet(token, env.SPREADSHEET_ID_MAIN, rangesMain);
@@ -163,7 +163,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     await sheetsBatchUpdate(token, env.SPREADSHEET_ID_MAIN, [
       { range: `'${SHEET_TQ}'!A1:D2`, values: tqRows },
-      { range: `'${SHEET_TC}'!A1:E${thuChiPadded.length}`, values: thuChiPadded },
+      { range: `'${SHEET_TC}'!A1:D${thuChiPadded.length}`, values: thuChiPadded },
     ]);
 
     const label = parsed.kind === "THU" ? "Thu" : "Chi";

@@ -85,7 +85,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   const rangesMain = [
     `'${SHEETS.tong_quan}'!A1:E2`,
-    `'${SHEETS.thu_chi}'!A1:E2000`,
+    `'${SHEETS.thu_chi}'!A1:D2000`,
     `'${SHEETS.coc}'!A1:D2000`,
   ];
 
@@ -169,7 +169,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       thu: r[1],
       chi: r[2],
       ghiChu: r[3],
-      bienDong: r[4] ?? "",
     })),
     coc: cocData.map((r) => ({ ngay: r[0], thu: r[1], chi: r[2], ghiChu: r[3] })),
     congNo: congNoData.map((r) => ({ ten: r[0], tienNo: r[1] })),
@@ -229,7 +228,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
 
-  const rangesForSkip = [`'${SHEETS.thu_chi}'!A1:E2000`];
+  const rangesForSkip = [`'${SHEETS.thu_chi}'!A1:D2000`];
   const sheetThuChiBatch = skipThuChi
     ? await sheetsBatchGet(token, env.SPREADSHEET_ID_MAIN, rangesForSkip)
     : {};
@@ -261,7 +260,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const sumCongNoB = congNoData.reduce((s, r) => s + num(r[1]), 0);
   const d2 = String(sumCongNoB);
 
-  /** Chỉ ghi A–D dòng 2: giữ nguyên ô E2 (công thức tay lấy giá trị cuối cột E tab THU_CHI). */
+  /** Chỉ ghi A-D dòng 2, giữ nguyên các ô khác trong TONG_QUAN nếu có công thức tay. */
   const tqRows: string[][] = [
     ["Dư đầu", "Tổng cọc", "Nhận cọc", "Tổng công nợ"],
     [a2, b2, c2, d2],
@@ -275,7 +274,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   ];
   if (!skipThuChi) {
     updates.unshift({
-      range: `'${thuChiName}'!A1:E${thuChiPadded.length}`,
+      range: `'${thuChiName}'!A1:D${thuChiPadded.length}`,
       values: thuChiPadded,
     });
   }

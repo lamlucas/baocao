@@ -120,15 +120,10 @@
                     <th>Thu</th>
                     <th>Chi</th>
                     <th>Ghi chú</th>
-                    <th class="col-thu-chi-e">Biến động</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
               </table>
-            </div>
-            <div class="du-dau-actions thu-chi-reveal-actions">
-              <button type="button" class="btn secondary" id="btn-reveal-thu-chi-e">Presently</button>
-              <button type="button" class="btn ghost" id="btn-hide-thu-chi-e" hidden>Hide</button>
             </div>
           </div>
 
@@ -200,14 +195,6 @@
           <div class="tab-panel" data-panel="bao_cao" role="tabpanel" hidden>
             <h2 class="section-title">Báo cáo tổng quan</h2>
             <div class="report-cards">
-              <div class="card">
-                <h3>Số dư sau thu chi</h3>
-                <p class="card-value" id="rep-sodu">—</p>
-                <div class="du-dau-actions">
-                  <button type="button" class="btn secondary" id="btn-reveal-balance-bao-cao">Presently</button>
-                  <button type="button" class="btn ghost" id="btn-hide-balance-bao-cao" hidden>Hide</button>
-                </div>
-              </div>
               <div class="card" id="card-rep-a2" hidden>
                 <h3>Balance</h3>
                 <p class="card-value" id="rep-a2">—</p>
@@ -233,6 +220,19 @@
                     <th>Ngày</th>
                     <th>Tổng thu</th>
                     <th>Tổng chi</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <h3 class="subsection-title">Bán dao hôm nay</h3>
+            <p class="muted small" id="report-bandao-today-note">Theo ngày hiện tại múi giờ Việt Nam.</p>
+            <div class="table-wrap">
+              <table class="data-table" id="table-report-bandao-today">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Tổng tiền</th>
                   </tr>
                 </thead>
                 <tbody></tbody>

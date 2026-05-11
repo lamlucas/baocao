@@ -450,18 +450,6 @@ body {
   white-space: nowrap;
 }
 
-/** Cột E tab Thu chi: khi chưa nhập mật khẩu, giá trị được che bằng `***`, cột vẫn hiển thị. */
-#table-thu-chi td.col-thu-chi-e .bien-dong-mask {
-  color: var(--muted);
-  letter-spacing: 0.18em;
-  font-weight: 600;
-}
-
-.thu-chi-reveal-actions {
-  justify-content: flex-end;
-  margin-top: 0.5rem;
-}
-
 @media (max-width: 640px) {
   .toolbar {
     flex-direction: column;

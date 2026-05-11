@@ -23,7 +23,6 @@ function rowThuChi(r) {
     thu: r.thu ?? "",
     chi: r.chi ?? "",
     ghiChu: r.ghiChu ?? "",
-    bienDong: r.bienDong ?? "",
   };
 }
 function rowCoc(r) {
@@ -44,25 +43,11 @@ function rowBanDao(r) {
 }
 
 const REVEAL_KEY = "bc_reveal_balance";
-const THU_CHI_E_REVEAL_KEY = "bc_reveal_thu_chi_e";
 function isRevealed() {
   return sessionStorage.getItem(REVEAL_KEY) === "1";
 }
-function isThuChiERevealed() {
-  return sessionStorage.getItem(THU_CHI_E_REVEAL_KEY) === "1";
-}
 function syncSensitiveRevealClass() {
   document.body.classList.toggle("bc-sensitive-revealed", isRevealed());
-}
-
-function setThuChiERevealed(v) {
-  if (v) sessionStorage.setItem(THU_CHI_E_REVEAL_KEY, "1");
-  else sessionStorage.removeItem(THU_CHI_E_REVEAL_KEY);
-  const btnRevealThuChiE = $("#btn-reveal-thu-chi-e");
-  const btnHideThuChiE = $("#btn-hide-thu-chi-e");
-  if (btnRevealThuChiE) btnRevealThuChiE.hidden = v;
-  if (btnHideThuChiE) btnHideThuChiE.hidden = !v;
-  renderThuChi();
 }
 
 function setRevealed(v) {
@@ -132,32 +117,16 @@ function cellMoneyDisplay(raw) {
   return fmtMoney(n);
 }
 
-/** Cột E: API có thể trả số thuần (UNFORMATTED) hoặc chuỗi — chỉ hiển thị, không tự tính lại. */
-function cellBienDongDisplay(raw) {
-  if (raw == null || raw === "") return "—";
-  if (typeof raw === "number" && Number.isFinite(raw)) return fmtMoney(raw);
-  const s = String(raw).trim();
-  if (!s) return "—";
-  const n = parseNumClient(s);
-  if (!Number.isFinite(n)) return escapeHtml(s);
-  return fmtMoney(n);
-}
-
 function renderThuChi() {
   const tb = tbody("table-thu-chi");
   tb.innerHTML = "";
-  const showE = isThuChiERevealed();
   state.thuChi.forEach((r) => {
     const tr = document.createElement("tr");
-    const eHtml = showE
-      ? cellBienDongDisplay(r.bienDong)
-      : '<span class="bien-dong-mask" aria-label="Đã ẩn">***</span>';
     tr.innerHTML = `
       <td class="cell-readonly">${escapeHtml(r.ngay ?? "")}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.thu)}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.chi)}</td>
-      <td class="cell-readonly">${escapeHtml(r.ghiChu ?? "")}</td>
-      <td class="cell-readonly cell-num col-thu-chi-e">${eHtml}</td>`;
+      <td class="cell-readonly">${escapeHtml(r.ghiChu ?? "")}</td>`;
     tb.appendChild(tr);
   });
 }
@@ -386,12 +355,17 @@ function buildReportFromState() {
   };
 }
 
+function todayInVietnamIso() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function renderReport() {
   const c = state.computed;
-  const e2raw = ($("#tq-e2")?.value ?? "").trim();
-  const e2ok = e2raw !== "" && Number.isFinite(parseNumClient(e2raw));
-  $("#rep-sodu").textContent =
-    isRevealed() && c && e2ok ? fmtMoney(parseNumClient(e2raw)) : "—";
   $("#rep-a2").textContent = isRevealed() && c ? fmtMoney(c.duDauNhap) : "—";
   $("#rep-b2").textContent = c ? fmtMoney(c.tongCoc) : "—";
   $("#rep-c2").textContent = c ? fmtMoney(c.nhanCoc) : "—";
@@ -403,6 +377,17 @@ function renderReport() {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(r.date)}</td><td>${fmtMoney(r.tongThu)}</td><td>${fmtMoney(r.tongChi)}</td>`;
     tbD.appendChild(tr);
+  }
+  const today = todayInVietnamIso();
+  const todayBanDao = (state.reportBanDao.byDay ?? []).find((r) => r.date === today);
+  const note = $("#report-bandao-today-note");
+  if (note) note.textContent = `Theo ngày hiện tại múi giờ Việt Nam: ${today}.`;
+  const tbBdToday = $("#table-report-bandao-today tbody");
+  if (tbBdToday) {
+    tbBdToday.innerHTML = "";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(today)}</td><td>${fmtMoney(todayBanDao?.tong ?? 0)}</td>`;
+    tbBdToday.appendChild(tr);
   }
   const tbM = $("#table-report-month tbody");
   tbM.innerHTML = "";
@@ -559,7 +544,6 @@ async function main() {
   activateTab("tong_quan");
   bindOverviewInput();
   setRevealed(isRevealed());
-  setThuChiERevealed(isThuChiERevealed());
 
   async function onRevealBalanceClick() {
     const p = prompt("Nhập mật khẩu để hiện Số dư đầu:");
@@ -571,22 +555,10 @@ async function main() {
       alert(e.body?.error || e.message || "Sai mật khẩu.");
     }
   }
-  async function onRevealThuChiEClick() {
-    const p = prompt("Nhập mật khẩu để hiện Biến động (E):");
-    if (!p) return;
-    try {
-      await api("/api/reveal-balance", { method: "POST", body: JSON.stringify({ password: p }) });
-      setThuChiERevealed(true);
-    } catch (e) {
-      alert(e.body?.error || e.message || "Sai mật khẩu.");
-    }
-  }
   $("#btn-reveal-balance").addEventListener("click", onRevealBalanceClick);
   $("#btn-hide-balance").addEventListener("click", () => setRevealed(false));
   $("#btn-reveal-balance-bao-cao")?.addEventListener("click", onRevealBalanceClick);
   $("#btn-hide-balance-bao-cao")?.addEventListener("click", () => setRevealed(false));
-  $("#btn-reveal-thu-chi-e")?.addEventListener("click", onRevealThuChiEClick);
-  $("#btn-hide-thu-chi-e")?.addEventListener("click", () => setThuChiERevealed(false));
 
   $("#form-login").addEventListener("submit", async (ev) => {
     ev.preventDefault();
