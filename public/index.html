@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BLACK CORP — Thu chi &amp; Sheet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <span class="brand" aria-label="BLACK CORP">BLACK CORP®</span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="view-login" class="panel login-panel">
+        <h1 class="panel-title">Login</h1>
+        <p class="muted">Black Corp - Báo cáo</p>
+        <form id="form-login" class="form-stack">
+          <label class="field">
+            <span>Admin</span>
+            <input type="text" name="username" autocomplete="username" required class="input" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" name="password" autocomplete="current-password" required class="input" />
+          </label>
+          <p id="login-error" class="error" hidden></p>
+          <button type="submit" class="btn primary">Login</button>
+        </form>
+      </section>
+
+      <section id="view-app" class="app-root" hidden>
+        <div class="toolbar">
+          <nav class="tabs" role="tablist" aria-label="Khu vực chính">
+            <button type="button" class="tab active" data-tab="tong_quan" role="tab" aria-selected="true">
+              Tổng quan
+            </button>
+            <button type="button" class="tab" data-tab="thu_chi" role="tab" aria-selected="false">Thu chi</button>
+            <button type="button" class="tab" data-tab="coc" role="tab" aria-selected="false">Tiền cọc</button>
+            <button type="button" class="tab" data-tab="cong_no" role="tab" aria-selected="false">Công nợ</button>
+            <button type="button" class="tab" data-tab="ban_dao" role="tab" aria-selected="false">Bán dao</button>
+            <button type="button" class="tab" data-tab="bao_cao" role="tab" aria-selected="false">Báo cáo</button>
+          </nav>
+          <div class="toolbar-actions">
+            <button type="button" id="btn-save" class="btn primary">Save</button>
+            <button type="button" id="btn-logout" class="btn ghost">Logout</button>
+          </div>
+        </div>
+        <p id="save-status" class="status" aria-live="polite"></p>
+
+        <div class="tab-panels" id="admin-tab-panels" hidden>
+          <div class="tab-panel active" data-panel="tong_quan" role="tabpanel">
+            <h2 class="section-title">Tổng quan</h2>
+            <p class="muted small">
+              Báo cáo <strong>Số Dư</strong>Thu Chi <strong>Công Nợ</strong> Hàng ngày
+            </p>
+            <div class="du-dau-doc-sheet" role="status" aria-live="polite" id="section-sensitive-balance" hidden>
+              <p class="du-dau-doc-label"><strong>Balance: </strong></p>
+              <p class="du-dau-doc-value" id="so-du-dau-doc-hien-thi">—</p>
+              <p class="du-dau-doc-hint muted small" id="so-du-dau-doc-raw" hidden></p>
+              <p class="du-dau-doc-label" style="margin-top: 0.85rem">
+                <strong>Balance Fluctuations: </strong>
+              </p>
+              <p class="du-dau-doc-value" id="bien-dong-doc-hien-thi">—</p>
+            </div>
+            <div class="du-dau-actions">
+              <button type="button" class="btn secondary" id="btn-reveal-balance">Presently</button>
+              <button type="button" class="btn ghost" id="btn-hide-balance" hidden>Hide</button>
+            </div>
+            <div class="grid-overview">
+              <label class="field" id="field-a2" hidden>
+                <span>Balance:</span>
+                <input type="password" id="tq-a2" class="input" inputmode="decimal" />
+              </label>
+              <label class="field">
+                <span>Tổng cọc</span>
+                <input type="text" id="tq-b2" class="input" readonly />
+              </label>
+              <label class="field">
+                <span>Nhận cọc</span>
+                <input type="text" id="tq-c2" class="input" readonly />
+              </label>
+              <label class="field">
+                <span>Tổng công nợ</span>
+                <input type="text" id="tq-d2" class="input" readonly />
+              </label>
+              <label class="field" id="field-e2" hidden>
+                <span>Balance Fluctuations:</span>
+                <input type="password" id="tq-e2" class="input" readonly />
+              </label>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="thu_chi" role="tabpanel" hidden>
+            <h2 class="section-title">Thu chi</h2>
+            <div class="bot-panel" id="panel-thu-chi-bot">
+              <h3 class="subsection-title">Bot Telegram - Thu Chi</h3>
+              <p class="muted small">
+                Dữ liệu dưới đây chỉ <strong>xem</strong> (đồng bộ từ Google Sheet).
+              </p>
+              <p class="muted small">
+                Khuyên dùng:
+                <code class="bot-code">=LET(f;FILTER('THU_CHI'!E2:E7777;'THU_CHI'!E2:E7777&lt;&gt;"");IFERROR(INDEX(f;ROWS(f));""))</code>
+              </p>
+              </p>
+              <ul class="muted small bot-panel-list">
+                <li>
+                  Nhóm: <strong>Thu chi - Black Corp</strong>
+                </li>              
+              </ul>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="table-thu-chi">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Thu</th>
+                    <th>Chi</th>
+                    <th>Ghi chú</th>
+                    <th class="col-thu-chi-e">Biến động</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="coc" role="tabpanel" hidden>
+            <h2 class="section-title">Tiền cọc</h2>
+            <div class="table-wrap">
+              <table class="data-table" id="table-coc">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Thu</th>
+                    <th>Chi</th>
+                    <th>Ghi chú</th>
+                    <th class="col-act"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <button type="button" class="btn secondary" data-add-row="coc">+</button>
+          </div>
+
+          <div class="tab-panel" data-panel="cong_no" role="tabpanel" hidden>
+            <h2 class="section-title">Công nợ</h2>
+            <p class="muted small">Báo cáo <strong>Công Nợ</strong>Hàng ngày</p>
+            <div class="table-wrap">
+              <table class="data-table" id="table-cong-no">
+                <thead>
+                  <tr>
+                    <th>Tên</th>
+                    <th>Tiền nợ</th>
+                    <th class="col-act"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="ban_dao" role="tabpanel" hidden>
+            <h2 class="section-title">Bán Dao</h2>
+            <p class="muted small">Báo cáo tổng tiền<strong>Bán Dao</strong>).</p>
+            <h3 class="subsection-title">Theo ngày</h3>
+            <div class="table-wrap">
+              <table class="data-table" id="table-bandao-day">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Tổng tiền</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <h3 class="subsection-title">Theo tháng</h3>
+            <div class="table-wrap">
+              <table class="data-table" id="table-bandao-month">
+                <thead>
+                  <tr>
+                    <th>Tháng</th>
+                    <th>Tổng tiền</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="bao_cao" role="tabpanel" hidden>
+            <h2 class="section-title">Báo cáo tổng quan</h2>
+            <div class="report-cards">
+              <div class="card">
+                <h3>Số dư sau thu chi</h3>
+                <p class="card-value" id="rep-sodu">—</p>
+                <p class="muted small">
+                  Số dư <strong>Thu Chi</strong>
+                </p>
+              </div>
+              <div class="card" id="card-rep-a2" hidden>
+                <h3>Balance</h3>
+                <p class="card-value" id="rep-a2">—</p>
+              </div>
+              <div class="card">
+                <h3>Tổng cọc</h3>
+                <p class="card-value" id="rep-b2">—</p>
+              </div>
+              <div class="card">
+                <h3>Nhận cọc</h3>
+                <p class="card-value" id="rep-c2">—</p>
+              </div>
+              <div class="card">
+                <h3>Tổng công nợ</h3>
+                <p class="card-value" id="rep-d2">—</p>
+              </div>
+              <div class="card" id="card-rep-e2" hidden>
+                <h3>Balance fluctuations</h3>
+                <p class="card-value" id="rep-e2">—</p>
+              </div>
+            </div>
+            <h3 class="subsection-title">Theo ngày</h3>
+            <div class="table-wrap">
+              <table class="data-table" id="table-report-day">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Tổng thu</th>
+                    <th>Tổng chi</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <h3 class="subsection-title">Theo tháng</h3>
+            <div class="table-wrap">
+              <table class="data-table" id="table-report-month">
+                <thead>
+                  <tr>
+                    <th>Tháng</th>
+                    <th>Tổng thu</th>
+                    <th>Tổng chi</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
