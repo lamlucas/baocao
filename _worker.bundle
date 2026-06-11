@@ -1,0 +1,3958 @@
+------formdata-undici-020285971403
+Content-Disposition: form-data; name="metadata"
+
+{"main_module":"functionsWorker-0.7558623101625145.js"}
+------formdata-undici-020285971403
+Content-Disposition: form-data; name="functionsWorker-0.7558623101625145.js"; filename="functionsWorker-0.7558623101625145.js"
+Content-Type: application/javascript+module
+
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// lib/google.ts
+var cachedToken = null;
+function parseSa(json) {
+  const o = JSON.parse(json);
+  if (!o.client_email || !o.private_key)
+    throw new Error("Invalid service account JSON");
+  return o;
+}
+__name(parseSa, "parseSa");
+function pkcs8PemToBuffer(pem) {
+  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/g, "").replace(/-----END PRIVATE KEY-----/g, "").replace(/\s/g, "");
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++)
+    bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+__name(pkcs8PemToBuffer, "pkcs8PemToBuffer");
+function base64urlJson(obj) {
+  const s = JSON.stringify(obj);
+  const b64 = btoa(s);
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+__name(base64urlJson, "base64urlJson");
+function base64urlFromSignature(sig) {
+  const bytes = new Uint8Array(sig);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++)
+    bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+__name(base64urlFromSignature, "base64urlFromSignature");
+async function signServiceAccountJwt(sa, now) {
+  const pem = sa.private_key.replace(/\\n/g, "\n");
+  const pkcs8 = pkcs8PemToBuffer(pem);
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pkcs8,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const header = { alg: "RS256", typ: "JWT" };
+  const payload = {
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/spreadsheets",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600
+  };
+  const a = base64urlJson(header);
+  const b = base64urlJson(payload);
+  const unsigned = `${a}.${b}`;
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsigned)
+  );
+  return `${unsigned}.${base64urlFromSignature(sig)}`;
+}
+__name(signServiceAccountJwt, "signServiceAccountJwt");
+async function getSheetsAccessToken(serviceAccountJson) {
+  const now = Math.floor(Date.now() / 1e3);
+  if (cachedToken && cachedToken.exp > now + 60)
+    return cachedToken.token;
+  const sa = parseSa(serviceAccountJson);
+  const jwt = await signServiceAccountJwt(sa, now);
+  const body = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion: jwt
+  });
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString()
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Token error ${res.status}: ${t}`);
+  }
+  const data = await res.json();
+  cachedToken = { token: data.access_token, exp: now + (data.expires_in ?? 3500) };
+  return data.access_token;
+}
+__name(getSheetsAccessToken, "getSheetsAccessToken");
+async function sheetsBatchGet(accessToken, spreadsheetId, ranges, valueRenderOption = "UNFORMATTED_VALUE") {
+  const u = new URL(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet`
+  );
+  for (const r of ranges)
+    u.searchParams.append("ranges", r);
+  u.searchParams.set("valueRenderOption", valueRenderOption);
+  const res = await fetch(u.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!res.ok)
+    throw new Error(`batchGet ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  const out = {};
+  for (const vr of json.valueRanges ?? []) {
+    const range = vr.range ?? "";
+    const raw = range.split("!")[0] ?? "";
+    const name = raw.replace(/^'+|'+$/g, "");
+    out[name] = vr.values ?? [];
+  }
+  return out;
+}
+__name(sheetsBatchGet, "sheetsBatchGet");
+async function sheetsBatchGetValueRanges(accessToken, spreadsheetId, ranges) {
+  const u = new URL(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet`
+  );
+  for (const r of ranges)
+    u.searchParams.append("ranges", r);
+  u.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
+  const res = await fetch(u.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!res.ok)
+    throw new Error(`batchGet ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  return (json.valueRanges ?? []).map((vr) => ({
+    range: vr.range ?? "",
+    values: vr.values ?? []
+  }));
+}
+__name(sheetsBatchGetValueRanges, "sheetsBatchGetValueRanges");
+async function sheetsBatchGetMergeSafe(accessToken, spreadsheetId, ranges, valueRenderOption = "UNFORMATTED_VALUE") {
+  const data = {};
+  const errors = [];
+  await Promise.all(
+    ranges.map(async (range) => {
+      const raw = (range.split("!")[0] ?? "").replace(/^'+|'+$/g, "");
+      if (!raw)
+        return;
+      try {
+        const part = await sheetsBatchGet(accessToken, spreadsheetId, [range], valueRenderOption);
+        data[raw] = part[raw] ?? [];
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[Sheets] ${spreadsheetId} ${range}: ${msg}`);
+        errors.push({ spreadsheetId, range, message: msg });
+        data[raw] = [];
+      }
+    })
+  );
+  return { data, errors };
+}
+__name(sheetsBatchGetMergeSafe, "sheetsBatchGetMergeSafe");
+async function sheetsBatchUpdate(accessToken, spreadsheetId, data, valueInputOption = "USER_ENTERED") {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        valueInputOption,
+        data: data.map((d) => ({ range: d.range, values: d.values }))
+      })
+    }
+  );
+  if (!res.ok)
+    throw new Error(`batchUpdate ${res.status}: ${await res.text()}`);
+}
+__name(sheetsBatchUpdate, "sheetsBatchUpdate");
+async function sheetsListTabTitles(accessToken, spreadsheetId) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok)
+    throw new Error(`spreadsheets.get ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  return (json.sheets ?? []).filter((s) => !s.properties?.hidden).map((s) => String(s.properties?.title ?? "").trim()).filter(Boolean);
+}
+__name(sheetsListTabTitles, "sheetsListTabTitles");
+async function sheetsPutValues(accessToken, spreadsheetId, rangeA1, values, valueInputOption = "USER_ENTERED") {
+  const encoded = encodeURIComponent(rangeA1);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encoded}?valueInputOption=${valueInputOption}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ values })
+    }
+  );
+  if (!res.ok)
+    throw new Error(`values.put ${res.status}: ${await res.text()}`);
+}
+__name(sheetsPutValues, "sheetsPutValues");
+async function sheetsValuesClear(accessToken, spreadsheetId, rangeA1) {
+  const encoded = encodeURIComponent(rangeA1);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encoded}:clear`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({})
+    }
+  );
+  if (!res.ok)
+    throw new Error(`values.clear ${res.status}: ${await res.text()}`);
+}
+__name(sheetsValuesClear, "sheetsValuesClear");
+async function sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, requests) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ requests })
+    }
+  );
+  if (!res.ok)
+    throw new Error(`spreadsheet.batchUpdate ${res.status}: ${await res.text()}`);
+}
+__name(sheetsSpreadsheetBatchUpdate, "sheetsSpreadsheetBatchUpdate");
+async function sheetsSpreadsheetTables(accessToken, spreadsheetId) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(title,sheetId),tables(tableId,range))`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok)
+    throw new Error(`spreadsheets.get tables ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  const out = [];
+  for (const sh of json.sheets ?? []) {
+    const sheetTitle = String(sh.properties?.title ?? "");
+    const sheetId = sh.properties?.sheetId;
+    if (sheetId == null)
+      continue;
+    for (const t of sh.tables ?? []) {
+      if (!t.tableId)
+        continue;
+      out.push({ tableId: t.tableId, sheetTitle, sheetId });
+    }
+  }
+  return out;
+}
+__name(sheetsSpreadsheetTables, "sheetsSpreadsheetTables");
+async function sheetsAppendTableRow(accessToken, spreadsheetId, tableId, values) {
+  const cells = values.map((v) => {
+    if (typeof v === "boolean")
+      return { userEnteredValue: { boolValue: v } };
+    if (typeof v === "number")
+      return { userEnteredValue: { numberValue: v } };
+    return { userEnteredValue: { stringValue: String(v) } };
+  });
+  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+    {
+      appendCells: {
+        tableId,
+        rows: [{ values: cells }],
+        fields: "userEnteredValue"
+      }
+    }
+  ]);
+}
+__name(sheetsAppendTableRow, "sheetsAppendTableRow");
+async function sheetsValuesAppend(accessToken, spreadsheetId, rangeA1, values, valueInputOption = "USER_ENTERED") {
+  const q = new URLSearchParams({
+    valueInputOption,
+    insertDataOption: "INSERT_ROWS"
+  });
+  const path = encodeURIComponent(rangeA1);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${path}:append?${q}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ values })
+    }
+  );
+  if (!res.ok)
+    throw new Error(`values.append ${res.status}: ${await res.text()}`);
+}
+__name(sheetsValuesAppend, "sheetsValuesAppend");
+
+// lib/thuChiSheet.ts
+function num(s) {
+  if (s == null || s === "")
+    return 0;
+  const raw = String(s).trim().replace(/\s/g, "");
+  const lastDot = raw.lastIndexOf(".");
+  const lastComma = raw.lastIndexOf(",");
+  let t = raw;
+  if (lastDot !== -1 && lastComma !== -1) {
+    const decimalSep = lastDot > lastComma ? "." : ",";
+    const thousandSep = decimalSep === "." ? "," : ".";
+    t = raw.replace(new RegExp(`\\${thousandSep}`, "g"), "").replace(decimalSep, ".");
+  } else if (lastDot !== -1 || lastComma !== -1) {
+    const sep = lastDot !== -1 ? "." : ",";
+    const parts = raw.split(sep);
+    if (sep === "." && parts.length > 2 && parts.slice(1).every((p) => p.length === 3)) {
+      t = parts.join("");
+    } else if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+      t = `${parts[0]}.${parts[1]}`;
+    } else {
+      t = raw.replace(sep, ".");
+    }
+  }
+  const n = Number(t);
+  return Number.isFinite(n) ? n : 0;
+}
+__name(num, "num");
+function sheetsSerialToIsoDate(serial) {
+  const days = Math.floor(serial);
+  const epoch = Date.UTC(1899, 11, 30);
+  const ms = epoch + days * 864e5;
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  if (y < 1970 || y > 2100)
+    return String(serial);
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+__name(sheetsSerialToIsoDate, "sheetsSerialToIsoDate");
+function flexibleDateToIso(input) {
+  const raw = (input ?? "").trim();
+  if (!raw)
+    return "";
+  const core = raw.split(/\s+/)[0] ?? "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(core))
+    return core;
+  const iso = core.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (iso)
+    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const dmy = core.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy)
+    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  const n = Number(String(core).replace(",", "."));
+  if (Number.isFinite(n) && n > 35e3 && n < 65e3 && Math.floor(n) === n) {
+    return sheetsSerialToIsoDate(Math.floor(n));
+  }
+  return raw;
+}
+__name(flexibleDateToIso, "flexibleDateToIso");
+function isoToSheetDateInput(iso) {
+  const core = flexibleDateToIso(iso);
+  const m = core.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m)
+    return iso.trim();
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+__name(isoToSheetDateInput, "isoToSheetDateInput");
+function isoToSheetDateSerial(iso) {
+  const core = flexibleDateToIso(iso);
+  const m = core.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m)
+    return iso.trim();
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const utc = Date.UTC(y, mo - 1, d);
+  const epoch = Date.UTC(1899, 11, 30);
+  return Math.round((utc - epoch) / 864e5);
+}
+__name(isoToSheetDateSerial, "isoToSheetDateSerial");
+function stringifySheetRow(cells) {
+  if (!Array.isArray(cells))
+    return [];
+  return cells.map((c) => {
+    if (c == null || c === "")
+      return "";
+    if (typeof c === "boolean")
+      return c ? "TRUE" : "FALSE";
+    if (typeof c === "number" && Number.isFinite(c))
+      return String(c);
+    return String(c);
+  });
+}
+__name(stringifySheetRow, "stringifySheetRow");
+function normalizeThuChiDataRow(cells) {
+  const src = Array.isArray(cells) ? cells : [];
+  const row = [...src];
+  while (row.length < 4)
+    row.push("");
+  const a = row[0];
+  let ngay = "";
+  if (typeof a === "number" && Number.isFinite(a)) {
+    ngay = sheetsSerialToIsoDate(a);
+  } else {
+    ngay = String(a ?? "").trim();
+  }
+  const th = row[1];
+  const thu = typeof th === "number" && Number.isFinite(th) ? String(th) : String(th ?? "").trim();
+  const ch = row[2];
+  const chi = typeof ch === "number" && Number.isFinite(ch) ? String(ch) : String(ch ?? "").trim();
+  const ghiChu = String(row[3] ?? "").trim();
+  return [ngay, thu, chi, ghiChu];
+}
+__name(normalizeThuChiDataRow, "normalizeThuChiDataRow");
+function numericOrText(cell) {
+  if (cell == null)
+    return "";
+  if (typeof cell === "number" && Number.isFinite(cell))
+    return String(cell);
+  if (typeof cell === "boolean")
+    return cell ? "TRUE" : "FALSE";
+  return String(cell).trim();
+}
+__name(numericOrText, "numericOrText");
+var BAN_DAO_COLS = 7;
+function normalizeBanDaoDataRow(cells) {
+  const src = Array.isArray(cells) ? cells : [];
+  const row = [...src];
+  while (row.length < BAN_DAO_COLS)
+    row.push("");
+  const a = row[0];
+  let ngay = "";
+  if (typeof a === "number" && Number.isFinite(a)) {
+    ngay = sheetsSerialToIsoDate(a);
+  } else {
+    ngay = String(a ?? "").trim();
+  }
+  return [
+    ngay,
+    String(row[1] ?? "").trim(),
+    String(row[2] ?? "").trim(),
+    String(row[3] ?? "").trim(),
+    numericOrText(row[4]),
+    numericOrText(row[5]),
+    numericOrText(row[6])
+  ];
+}
+__name(normalizeBanDaoDataRow, "normalizeBanDaoDataRow");
+function buildBanDaoAppendRow(ngay, f) {
+  return [
+    isoToSheetDateInput(ngay),
+    f.ten,
+    f.diaChi,
+    f.sdt,
+    f.soLuong.trim() === "" ? "" : num(f.soLuong),
+    f.gia.trim() === "" ? "" : num(f.gia),
+    f.thanhTien.trim() === "" ? "" : num(f.thanhTien)
+  ];
+}
+__name(buildBanDaoAppendRow, "buildBanDaoAppendRow");
+function buildCongNoAppendRows(pairs) {
+  return pairs.map((p) => [p.name.trim(), num(p.amountStr)]);
+}
+__name(buildCongNoAppendRows, "buildCongNoAppendRows");
+function parseRows(rows, cols) {
+  return rows.map((r) => {
+    const o = [...r];
+    while (o.length < cols)
+      o.push("");
+    return o.slice(0, cols).map((c) => c == null ? "" : String(c));
+  });
+}
+__name(parseRows, "parseRows");
+var COC_COLS = 5;
+function rateNumericOrEmpty(raw) {
+  const t = (raw ?? "").trim();
+  if (!t)
+    return "";
+  if (!/[\d]/.test(t))
+    return "";
+  const n = num(t);
+  return Number.isFinite(n) ? n : "";
+}
+__name(rateNumericOrEmpty, "rateNumericOrEmpty");
+function normalizeCocDataRow(cells) {
+  const src = Array.isArray(cells) ? cells : [];
+  const row = [...src];
+  while (row.length < COC_COLS)
+    row.push("");
+  const a = row[0];
+  let ngay = "";
+  if (typeof a === "number" && Number.isFinite(a)) {
+    ngay = sheetsSerialToIsoDate(a);
+  } else {
+    ngay = String(a ?? "").trim();
+  }
+  const th = row[1];
+  const thu = typeof th === "number" && Number.isFinite(th) ? String(th) : String(th ?? "").trim();
+  const ch = row[2];
+  const chi = typeof ch === "number" && Number.isFinite(ch) ? String(ch) : String(ch ?? "").trim();
+  let ten = String(row[3] ?? "").trim();
+  let note = String(row[4] ?? "").trim();
+  if (note === "" && ten !== "") {
+    note = ten;
+    ten = "";
+  }
+  return [ngay, thu, chi, ten, note];
+}
+__name(normalizeCocDataRow, "normalizeCocDataRow");
+function buildThuChiAppendRow(m) {
+  return [
+    isoToSheetDateInput(m.ngay),
+    m.thu.trim() === "" ? "" : num(m.thu),
+    m.chi.trim() === "" ? "" : num(m.chi),
+    m.ghiChu
+  ];
+}
+__name(buildThuChiAppendRow, "buildThuChiAppendRow");
+function buildCocAppendRows(appended) {
+  return appended.map((m) => [
+    isoToSheetDateInput(m.ngay),
+    m.thu.trim() === "" ? "" : num(m.thu),
+    m.chi.trim() === "" ? "" : num(m.chi),
+    m.ten,
+    m.note
+  ]);
+}
+__name(buildCocAppendRows, "buildCocAppendRows");
+
+// lib/chamCongSheet.ts
+var CHAM_CONG_TEMPLATE_TAB = "SUBEO";
+var LEGACY_TEMPLATE_TABS = ["SU_BEO"];
+var DEFAULT_TY_GIA_FORMULA = '=GOOGLEFINANCE("CURRENCY:USDVND")';
+var MAX_ROW = 2e3;
+function quoteSheet(title) {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+__name(quoteSheet, "quoteSheet");
+function formatNgayVietnam(unixSec) {
+  const d = unixSec != null ? new Date(unixSec * 1e3) : /* @__PURE__ */ new Date();
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(d);
+}
+__name(formatNgayVietnam, "formatNgayVietnam");
+async function getSheetIdByTitle(accessToken, spreadsheetId, title) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title))`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok)
+    throw new Error(`spreadsheets.get ${res.status}: ${await res.text()}`);
+  const grid = await res.json();
+  for (const s of grid.sheets ?? []) {
+    if (s.properties?.title === title && s.properties.sheetId != null) {
+      return s.properties.sheetId;
+    }
+  }
+  return null;
+}
+__name(getSheetIdByTitle, "getSheetIdByTitle");
+function isChamCongTemplateTab(title) {
+  return title.trim().toLowerCase() === CHAM_CONG_TEMPLATE_TAB.toLowerCase();
+}
+__name(isChamCongTemplateTab, "isChamCongTemplateTab");
+function isChamCongSystemTab(title) {
+  const s = title.trim();
+  if (!s)
+    return true;
+  const low = s.toLowerCase();
+  if (LEGACY_TEMPLATE_TABS.some((t) => t.toLowerCase() === low))
+    return true;
+  if (low === "sheet1" || low === "sheet 1")
+    return true;
+  if (/^tổng hợp$|^tong hop$/i.test(low))
+    return true;
+  if (low === "cau_hinh" || low === "c\u1EA5u h\xECnh")
+    return true;
+  if (low === "hh_loai_tru")
+    return true;
+  return false;
+}
+__name(isChamCongSystemTab, "isChamCongSystemTab");
+function listChamCongEmployeeTabs(allTitles) {
+  return allTitles.filter((t) => !isChamCongSystemTab(t)).sort((a, b) => a.localeCompare(b, "vi"));
+}
+__name(listChamCongEmployeeTabs, "listChamCongEmployeeTabs");
+async function readTemplateF2ForCopy(accessToken, spreadsheetId, templateTab) {
+  const range = `${quoteSheet(templateTab)}!F2`;
+  const formulaPart = await sheetsBatchGet(accessToken, spreadsheetId, [range], "FORMULA");
+  const formulaCell = formulaPart[templateTab]?.[0]?.[0];
+  if (typeof formulaCell === "string" && formulaCell.startsWith("="))
+    return formulaCell;
+  const valuePart = await sheetsBatchGet(accessToken, spreadsheetId, [range]);
+  const valueCell = valuePart[templateTab]?.[0]?.[0];
+  if (valueCell !== "" && valueCell != null)
+    return String(valueCell);
+  return DEFAULT_TY_GIA_FORMULA;
+}
+__name(readTemplateF2ForCopy, "readTemplateF2ForCopy");
+async function copyTemplateF2ToTab(accessToken, spreadsheetId, tabName, templateTab) {
+  const f2 = await readTemplateF2ForCopy(accessToken, spreadsheetId, templateTab);
+  await sheetsPutValues(
+    accessToken,
+    spreadsheetId,
+    `${quoteSheet(tabName)}!F2`,
+    [[f2]],
+    "USER_ENTERED"
+  );
+}
+__name(copyTemplateF2ToTab, "copyTemplateF2ToTab");
+async function createChamCongEmployeeTab(accessToken, spreadsheetId, tabName, templateTab = CHAM_CONG_TEMPLATE_TAB) {
+  const name = tabName.trim();
+  if (!name)
+    throw new Error("Thi\u1EBFu t\xEAn tab.");
+  if (isChamCongTemplateTab(name)) {
+    throw new Error(`Tab \xAB ${name} \xBB l\xE0 tab m\u1EABu \u2014 ch\u1ECDn t\xEAn kh\xE1c.`);
+  }
+  if (isChamCongSystemTab(name)) {
+    throw new Error(`T\xEAn tab \xAB ${name} \xBB tr\xF9ng tab h\u1EC7 th\u1ED1ng.`);
+  }
+  const titles = await sheetsListTabTitles(accessToken, spreadsheetId);
+  if (titles.includes(name)) {
+    throw new Error(`Tab \xAB ${name} \xBB \u0111\xE3 t\u1ED3n t\u1EA1i.`);
+  }
+  const sourceId = await getSheetIdByTitle(accessToken, spreadsheetId, templateTab);
+  if (sourceId == null) {
+    throw new Error(`Kh\xF4ng t\xECm th\u1EA5y tab m\u1EABu \xAB ${templateTab} \xBB.`);
+  }
+  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+    { duplicateSheet: { sourceSheetId: sourceId, newSheetName: name } }
+  ]);
+  const q = quoteSheet(name);
+  await sheetsValuesClear(accessToken, spreadsheetId, `${q}!A3:F${MAX_ROW}`);
+  const today = formatNgayVietnam();
+  await sheetsPutValues(accessToken, spreadsheetId, `${q}!A2:B2`, [[today, "FALSE"]], "USER_ENTERED");
+  await copyTemplateF2ToTab(accessToken, spreadsheetId, name, templateTab);
+}
+__name(createChamCongEmployeeTab, "createChamCongEmployeeTab");
+async function deleteChamCongEmployeeTab(accessToken, spreadsheetId, tabName, templateTab = CHAM_CONG_TEMPLATE_TAB) {
+  const name = tabName.trim();
+  if (!name)
+    throw new Error("Thi\u1EBFu t\xEAn tab.");
+  if (isChamCongTemplateTab(name)) {
+    throw new Error(`Kh\xF4ng th\u1EC3 x\xF3a tab m\u1EABu \xAB ${name} \xBB.`);
+  }
+  if (isChamCongSystemTab(name)) {
+    throw new Error(`Kh\xF4ng th\u1EC3 x\xF3a tab \xAB ${name} \xBB.`);
+  }
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title))`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok)
+    throw new Error(`spreadsheets.get ${res.status}: ${await res.text()}`);
+  const grid = await res.json();
+  const sheets = grid.sheets ?? [];
+  if (sheets.length <= 1)
+    throw new Error("Sheet ch\u1EC9 c\xF2n m\u1ED9t tab.");
+  const target = sheets.find((s) => s.properties?.title === name);
+  const sheetId = target?.properties?.sheetId;
+  if (sheetId == null)
+    throw new Error(`Kh\xF4ng t\xECm th\u1EA5y tab \xAB ${name} \xBB.`);
+  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [{ deleteSheet: { sheetId } }]);
+}
+__name(deleteChamCongEmployeeTab, "deleteChamCongEmployeeTab");
+async function readTyGiaF2(accessToken, spreadsheetId, tabName) {
+  const part = await sheetsBatchGet(accessToken, spreadsheetId, [`${quoteSheet(tabName)}!F2`]);
+  const row = part[tabName]?.[0];
+  return num(row?.[0]);
+}
+__name(readTyGiaF2, "readTyGiaF2");
+
+// lib/session.ts
+var COOKIE = "bc_session";
+var MAX_AGE_SEC = 60 * 60 * 24 * 7;
+function encoder() {
+  return new TextEncoder();
+}
+__name(encoder, "encoder");
+async function hmac(secret, data) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder().encode(data));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+__name(hmac, "hmac");
+async function signSession(env, username) {
+  const secret = env.SESSION_SECRET?.trim();
+  if (!secret)
+    throw new Error("Thi\u1EBFu SESSION_SECRET (\u0111\u1EB7t Secret tr\xEAn Cloudflare Pages).");
+  const exp = Math.floor(Date.now() / 1e3) + MAX_AGE_SEC;
+  const payload = `${username}:${exp}`;
+  const sig = await hmac(secret, payload);
+  return btoa(payload + ":" + sig);
+}
+__name(signSession, "signSession");
+async function verifySession(env, cookieHeader) {
+  if (!env.SESSION_SECRET?.trim())
+    return null;
+  if (!cookieHeader)
+    return null;
+  const parts = cookieHeader.split(";").map((p) => p.trim());
+  const pair = parts.find((p) => p.startsWith(COOKIE + "="));
+  if (!pair)
+    return null;
+  let value;
+  try {
+    value = decodeURIComponent(pair.slice(COOKIE.length + 1));
+  } catch {
+    return null;
+  }
+  let decoded;
+  try {
+    decoded = atob(value);
+  } catch {
+    return null;
+  }
+  const lastColon = decoded.lastIndexOf(":");
+  if (lastColon < 0)
+    return null;
+  const sig = decoded.slice(lastColon + 1);
+  const rest = decoded.slice(0, lastColon);
+  const prevColon = rest.lastIndexOf(":");
+  if (prevColon < 0)
+    return null;
+  const user = rest.slice(0, prevColon);
+  const expStr = rest.slice(prevColon + 1);
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1e3))
+    return null;
+  const expected = await hmac(env.SESSION_SECRET.trim(), `${user}:${exp}`);
+  if (expected !== sig)
+    return null;
+  if (user !== env.ADMIN_USERNAME)
+    return null;
+  return user;
+}
+__name(verifySession, "verifySession");
+function sessionCookieHeader(token, secure) {
+  const sec = secure ? " Secure;" : "";
+  return `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly;${sec} SameSite=Lax; Max-Age=${MAX_AGE_SEC}`;
+}
+__name(sessionCookieHeader, "sessionCookieHeader");
+function clearSessionCookieHeader(secure) {
+  const sec = secure ? " Secure;" : "";
+  return `${COOKIE}=; Path=/; HttpOnly;${sec} SameSite=Lax; Max-Age=0`;
+}
+__name(clearSessionCookieHeader, "clearSessionCookieHeader");
+
+// api/cham-cong-employees.ts
+var DEFAULT_SPREADSHEET_ID_CHAM_CONG = "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w";
+function spreadsheetIdChamCong(env) {
+  const v = env.SPREADSHEET_ID_CHAM_CONG?.trim();
+  return v || DEFAULT_SPREADSHEET_ID_CHAM_CONG;
+}
+__name(spreadsheetIdChamCong, "spreadsheetIdChamCong");
+async function requireUser(env, request) {
+  const user = await verifySession(env, request.headers.get("Cookie"));
+  if (!user)
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  return null;
+}
+__name(requireUser, "requireUser");
+var onRequestGet = /* @__PURE__ */ __name(async (context) => {
+  const deny = await requireUser(context.env, context.request);
+  if (deny)
+    return deny;
+  if (!context.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+    return Response.json({ error: "Thi\u1EBFu GOOGLE_SERVICE_ACCOUNT_JSON." }, { status: 503 });
+  }
+  try {
+    const token = await getSheetsAccessToken(context.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const id = spreadsheetIdChamCong(context.env);
+    const titles = await sheetsListTabTitles(token, id);
+    return Response.json({
+      ok: true,
+      templateTab: CHAM_CONG_TEMPLATE_TAB,
+      employees: listChamCongEmployeeTabs(titles)
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}, "onRequestGet");
+var onRequestPost = /* @__PURE__ */ __name(async (context) => {
+  const deny = await requireUser(context.env, context.request);
+  if (deny)
+    return deny;
+  if (!context.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+    return Response.json({ error: "Thi\u1EBFu GOOGLE_SERVICE_ACCOUNT_JSON." }, { status: 503 });
+  }
+  let body;
+  try {
+    body = await context.request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const tabName = String(body.tabName ?? "").trim();
+  if (!tabName)
+    return Response.json({ error: "Thi\u1EBFu t\xEAn tab." }, { status: 400 });
+  try {
+    const token = await getSheetsAccessToken(context.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const id = spreadsheetIdChamCong(context.env);
+    await createChamCongEmployeeTab(token, id, tabName);
+    return Response.json({
+      ok: true,
+      message: `\u0110\xE3 t\u1EA1o tab \xAB ${tabName} \xBB (copy t\u1EEB ${CHAM_CONG_TEMPLATE_TAB}, F2 = c\xF4ng th\u1EE9c SUBEO!F2).`,
+      tabName
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}, "onRequestPost");
+var onRequestDelete = /* @__PURE__ */ __name(async (context) => {
+  const deny = await requireUser(context.env, context.request);
+  if (deny)
+    return deny;
+  if (!context.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+    return Response.json({ error: "Thi\u1EBFu GOOGLE_SERVICE_ACCOUNT_JSON." }, { status: 503 });
+  }
+  const tabName = new URL(context.request.url).searchParams.get("tab")?.trim() ?? "";
+  if (!tabName)
+    return Response.json({ error: "Thi\u1EBFu ?tab=" }, { status: 400 });
+  try {
+    const token = await getSheetsAccessToken(context.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const id = spreadsheetIdChamCong(context.env);
+    await deleteChamCongEmployeeTab(token, id, tabName);
+    return Response.json({ ok: true, message: `\u0110\xE3 x\xF3a tab \xAB ${tabName} \xBB.` });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}, "onRequestDelete");
+
+// api/health.ts
+var onRequestGet2 = /* @__PURE__ */ __name(async (context) => {
+  const { env } = context;
+  const checks = {
+    ADMIN_USERNAME: Boolean(env.ADMIN_USERNAME?.trim()),
+    ADMIN_PASSWORD: Boolean(env.ADMIN_PASSWORD?.trim()),
+    SESSION_SECRET: Boolean(env.SESSION_SECRET?.trim()),
+    GOOGLE_SERVICE_ACCOUNT_JSON: Boolean(env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()),
+    SPREADSHEET_ID_MAIN: Boolean(env.SPREADSHEET_ID_MAIN?.trim()),
+    SPREADSHEET_ID_DEBT_SALES: Boolean(env.SPREADSHEET_ID_DEBT_SALES?.trim()),
+    SPREADSHEET_ID_CHAM_CONG: Boolean(
+      (env.SPREADSHEET_ID_CHAM_CONG ?? "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w").trim()
+    ),
+    TELEGRAM_BOT_TOKEN: Boolean(env.TELEGRAM_BOT_TOKEN?.trim()),
+    TELEGRAM_LUONG_NV_BOT_TOKEN: Boolean(env.TELEGRAM_LUONG_NV_BOT_TOKEN?.trim())
+  };
+  const missing = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
+  return Response.json({
+    ok: true,
+    service: "black-corp-sheets",
+    functionsDeployed: true,
+    checks,
+    missingSecrets: missing,
+    hint: missing.length > 0 ? "Thi\u1EBFu Secret tr\xEAn Cloudflare Pages \u2014 b\u1ED5 sung r\u1ED3i redeploy." : "C\u1EA5u h\xECnh \u0111\u1EE7. N\u1EBFu Sheet v\u1EABn tr\u1ED1ng: chia s\u1EBB file Google Sheet cho email service account."
+  });
+}, "onRequestGet");
+
+// api/login.ts
+function timingSafeEqual(a, b) {
+  if (typeof b !== "string")
+    return false;
+  if (a.length !== b.length)
+    return false;
+  let x = 0;
+  for (let i = 0; i < a.length; i++)
+    x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
+__name(timingSafeEqual, "timingSafeEqual");
+var onRequestPost2 = /* @__PURE__ */ __name(async (context) => {
+  const { request, env } = context;
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const u = (body.username ?? "").trim();
+  const p = body.password ?? "";
+  if (!u || !p)
+    return Response.json({ error: "Thi\u1EBFu t\xE0i kho\u1EA3n ho\u1EB7c m\u1EADt kh\u1EA9u" }, { status: 400 });
+  if (!env.ADMIN_PASSWORD) {
+    return Response.json(
+      { error: "C\u1EA5u h\xECnh server thi\u1EBFu ADMIN_PASSWORD (Secret tr\xEAn Cloudflare Pages)." },
+      { status: 503 }
+    );
+  }
+  if (u !== env.ADMIN_USERNAME || !timingSafeEqual(p, env.ADMIN_PASSWORD)) {
+    return Response.json({ error: "Sai t\xE0i kho\u1EA3n ho\u1EB7c m\u1EADt kh\u1EA9u" }, { status: 401 });
+  }
+  let token;
+  try {
+    token = await signSession(env, u);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ error: msg }, { status: 503 });
+  }
+  const secure = new URL(request.url).protocol === "https:";
+  return Response.json({ ok: true }, {
+    headers: { "Set-Cookie": sessionCookieHeader(token, secure) }
+  });
+}, "onRequestPost");
+
+// api/logout.ts
+var onRequestPost3 = /* @__PURE__ */ __name(async (context) => {
+  const secure = new URL(context.request.url).protocol === "https:";
+  return Response.json({ ok: true }, {
+    headers: { "Set-Cookie": clearSessionCookieHeader(secure) }
+  });
+}, "onRequestPost");
+
+// lib/hhLoaiTru.ts
+var HH_LOAI_TRU_TAB = "HH_LOAI_TRU";
+function normalizeName(s) {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+__name(normalizeName, "normalizeName");
+function nameMatches(haystack, needle) {
+  const h = normalizeName(haystack);
+  const n = normalizeName(needle);
+  if (!h || !n)
+    return false;
+  return h === n || h.includes(n) || n.includes(h);
+}
+__name(nameMatches, "nameMatches");
+function datesMatch(rowNgay, ruleNgay) {
+  const iso = flexibleDateToIso(rowNgay ?? "");
+  const ruleIso = flexibleDateToIso(ruleNgay ?? "");
+  return Boolean(iso && ruleIso && iso === ruleIso);
+}
+__name(datesMatch, "datesMatch");
+function ruleMatchesGhiChu(rule, ghiChu) {
+  if (rule.tenDaiLy && nameMatches(ghiChu, rule.tenDaiLy))
+    return true;
+  if (rule.note && nameMatches(ghiChu, rule.note))
+    return true;
+  return false;
+}
+__name(ruleMatchesGhiChu, "ruleMatchesGhiChu");
+function thuChiRowMatchesHhLoaiTruThuRule(row, rule) {
+  const thu = num(row.thu);
+  const khoanThu = num(rule.khoanThu);
+  if (thu <= 0 || khoanThu <= 0)
+    return false;
+  if (!datesMatch(row.ngay ?? "", rule.ngay ?? ""))
+    return false;
+  if (!ruleMatchesGhiChu(rule, row.ghiChu ?? ""))
+    return false;
+  return Math.abs(thu - khoanThu) <= 9e-3;
+}
+__name(thuChiRowMatchesHhLoaiTruThuRule, "thuChiRowMatchesHhLoaiTruThuRule");
+function thuChiRowMatchesHhLoaiTruChiRule(row, rule) {
+  const chi = num(row.chi);
+  const khoanChi = num(rule.khoanChi);
+  if (chi <= 0 || khoanChi <= 0)
+    return false;
+  if (!datesMatch(row.ngay ?? "", rule.ngay ?? ""))
+    return false;
+  if (!ruleMatchesGhiChu(rule, row.ghiChu ?? ""))
+    return false;
+  return Math.abs(chi - khoanChi) <= 9e-3;
+}
+__name(thuChiRowMatchesHhLoaiTruChiRule, "thuChiRowMatchesHhLoaiTruChiRule");
+function isThuExcludedByHhLoaiTruRules(row, rules) {
+  return rules.some((rule) => thuChiRowMatchesHhLoaiTruThuRule(row, rule));
+}
+__name(isThuExcludedByHhLoaiTruRules, "isThuExcludedByHhLoaiTruRules");
+function isChiExcludedByHhLoaiTruRules(row, rules) {
+  return rules.some((rule) => thuChiRowMatchesHhLoaiTruChiRule(row, rule));
+}
+__name(isChiExcludedByHhLoaiTruRules, "isChiExcludedByHhLoaiTruRules");
+function parseNgayCell(cell) {
+  if (cell == null || cell === "")
+    return "";
+  if (typeof cell === "number" && Number.isFinite(cell)) {
+    if (cell > 35e3 && cell < 65e3 && Math.floor(cell) === cell) {
+      return sheetsSerialToIsoDate(Math.floor(cell));
+    }
+  }
+  return flexibleDateToIso(String(cell));
+}
+__name(parseNgayCell, "parseNgayCell");
+function normalizeRuleAmounts(khoanThu, khoanChi) {
+  return {
+    khoanThu: khoanThu > 0 ? khoanThu : 0,
+    khoanChi: khoanChi > 0 ? khoanChi : 0
+  };
+}
+__name(normalizeRuleAmounts, "normalizeRuleAmounts");
+function sheetCellDisplayText(cell) {
+  if (cell == null || cell === "")
+    return "";
+  return String(cell).trim();
+}
+__name(sheetCellDisplayText, "sheetCellDisplayText");
+function detectHhLoaiTruLayout(header) {
+  const b = String(header[1] ?? "").trim().toLowerCase();
+  const d = String(header[3] ?? "").trim().toLowerCase();
+  if (/khoản thu|khoan thu|thu/.test(b))
+    return "sheet";
+  if (/tên|ten|name/.test(d))
+    return "sheet";
+  return "legacy";
+}
+__name(detectHhLoaiTruLayout, "detectHhLoaiTruLayout");
+function parseRuleRow(row, fmt, layout) {
+  const ngay = parseNgayCell(row[0]);
+  let tenDaiLy = "";
+  let note = "";
+  let khoanThu = 0;
+  let khoanChi = 0;
+  if (layout === "sheet") {
+    khoanThu = num(row[1]);
+    khoanChi = num(row[2]);
+    tenDaiLy = String(row[3] ?? "").trim();
+    note = String(row[4] ?? "").trim();
+  } else {
+    tenDaiLy = String(row[1] ?? "").trim();
+    khoanThu = num(row[2]);
+    khoanChi = num(row[3]);
+  }
+  const amounts = normalizeRuleAmounts(khoanThu, khoanChi);
+  if (!ngay || !tenDaiLy && !note || amounts.khoanThu <= 0 && amounts.khoanChi <= 0)
+    return null;
+  const fmtRow = Array.isArray(fmt) ? fmt : null;
+  const thuCol = layout === "sheet" ? 1 : 2;
+  const chiCol = layout === "sheet" ? 2 : 3;
+  return {
+    ngay,
+    tenDaiLy,
+    khoanThu: amounts.khoanThu,
+    khoanChi: amounts.khoanChi,
+    note: note || void 0,
+    ngayDisplay: fmtRow ? sheetCellDisplayText(fmtRow[0]) : "",
+    khoanThuDisplay: fmtRow ? sheetCellDisplayText(fmtRow[thuCol]) : "",
+    khoanChiDisplay: fmtRow ? sheetCellDisplayText(fmtRow[chiCol]) : ""
+  };
+}
+__name(parseRuleRow, "parseRuleRow");
+function parseHhLoaiTruSheetRows(raw, formattedRows) {
+  if (!raw.length)
+    return [];
+  const hasHeader = isHeaderRow(raw[0]);
+  const layout = hasHeader ? detectHhLoaiTruLayout(stringifySheetRow(raw[0])) : "sheet";
+  const start = hasHeader ? 1 : 0;
+  const out = [];
+  for (let i = start; i < raw.length; i++) {
+    const row = stringifySheetRow(raw[i]);
+    const fmt = formattedRows?.[i] ?? null;
+    const rule = parseRuleRow(row, Array.isArray(fmt) ? stringifySheetRow(fmt) : null, layout);
+    if (rule)
+      out.push(rule);
+  }
+  return out;
+}
+__name(parseHhLoaiTruSheetRows, "parseHhLoaiTruSheetRows");
+function isHeaderRow(row) {
+  if (!Array.isArray(row))
+    return false;
+  const a = String(row[0] ?? "").trim().toLowerCase();
+  const b = String(row[1] ?? "").trim().toLowerCase();
+  const c = String(row[2] ?? "").trim().toLowerCase();
+  const d = String(row[3] ?? "").trim().toLowerCase();
+  return /ngày|ngay|date/.test(a) || /khoản thu|khoan thu|thu/.test(b) || /khoản chi|khoan chi|chi/.test(c) || /tên|ten|name|đại lý|dai ly|ghi chú|ghi chu/.test(d) || /đại lý|dai ly|tên|ten|ghi chú/.test(b);
+}
+__name(isHeaderRow, "isHeaderRow");
+function hhLoaiTruRuleKey(rule) {
+  const ngay = flexibleDateToIso(rule.ngay ?? "");
+  const ten = normalizeName(rule.tenDaiLy ?? "");
+  const note = normalizeName(rule.note ?? "");
+  const thu = num(String(rule.khoanThu ?? "")).toFixed(2);
+  const chi = num(String(rule.khoanChi ?? "")).toFixed(2);
+  return `${ngay}|${ten}|${note}|${thu}|${chi}`;
+}
+__name(hhLoaiTruRuleKey, "hhLoaiTruRuleKey");
+function newHhLoaiTruRulesOnly(existing, incoming) {
+  const keys = new Set(existing.map(hhLoaiTruRuleKey));
+  return incoming.filter((r) => !keys.has(hhLoaiTruRuleKey(r)));
+}
+__name(newHhLoaiTruRulesOnly, "newHhLoaiTruRulesOnly");
+function hhLoaiTruRowValues(rule) {
+  const thu = num(String(rule.khoanThu ?? ""));
+  const chi = num(String(rule.khoanChi ?? ""));
+  return [
+    isoToSheetDateSerial(flexibleDateToIso(rule.ngay)),
+    thu > 0 ? thu : "",
+    chi > 0 ? chi : "",
+    String(rule.tenDaiLy ?? "").trim(),
+    String(rule.note ?? "").trim()
+  ];
+}
+__name(hhLoaiTruRowValues, "hhLoaiTruRowValues");
+function normalizeHhLoaiTruInput(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const o = raw;
+  const ngay = flexibleDateToIso(String(o.ngay ?? "").trim());
+  const tenDaiLy = String(o.tenDaiLy ?? o.ten ?? "").trim();
+  const note = String(o.note ?? "").trim();
+  const { khoanThu, khoanChi } = normalizeRuleAmounts(
+    num(String(o.khoanThu ?? o.thu ?? "")),
+    num(String(o.khoanChi ?? o.chi ?? ""))
+  );
+  if (!ngay || !tenDaiLy && !note || khoanThu <= 0 && khoanChi <= 0)
+    return null;
+  const thuDisplay = khoanThu > 0 ? String(o.khoanThuDisplay ?? o.khoanThu ?? o.thu ?? "").trim() : "";
+  const chiDisplay = khoanChi > 0 ? String(o.khoanChiDisplay ?? o.khoanChi ?? o.chi ?? "").trim() : "";
+  return {
+    ngay,
+    tenDaiLy,
+    khoanChi,
+    khoanThu,
+    note: note || void 0,
+    khoanThuDisplay: thuDisplay,
+    khoanChiDisplay: chiDisplay
+  };
+}
+__name(normalizeHhLoaiTruInput, "normalizeHhLoaiTruInput");
+function normalizeHhLoaiTruList(raw) {
+  if (!Array.isArray(raw))
+    return [];
+  const out = [];
+  for (const item of raw) {
+    const rule = normalizeHhLoaiTruInput(item);
+    if (rule)
+      out.push(rule);
+  }
+  return out;
+}
+__name(normalizeHhLoaiTruList, "normalizeHhLoaiTruList");
+
+// lib/chamCongDateRoll.ts
+var MAX_SCAN_ROW = 400;
+var DATA_COLS = 6;
+function quoteSheet2(title) {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+__name(quoteSheet2, "quoteSheet");
+function parseVietnamDateCell(cell) {
+  if (cell == null || cell === "")
+    return null;
+  if (typeof cell === "number" && Number.isFinite(cell)) {
+    if (cell > 35e3 && cell < 65e3 && Math.floor(cell) === cell) {
+      const epoch = new Date(Date.UTC(1899, 11, 30));
+      const dt = new Date(epoch.getTime() + cell * 864e5);
+      return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+    }
+  }
+  const t = String(cell).trim();
+  const m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (!m)
+    return null;
+  const d = Number(m[1]);
+  const mo = Number(m[2]);
+  const y = Number(m[3]);
+  if (!Number.isFinite(d) || !Number.isFinite(mo) || !Number.isFinite(y))
+    return null;
+  return { y, m: mo, d };
+}
+__name(parseVietnamDateCell, "parseVietnamDateCell");
+function dateKey(p) {
+  return p.y * 1e4 + p.m * 100 + p.d;
+}
+__name(dateKey, "dateKey");
+function todayParts(unixSec) {
+  const s = formatNgayVietnam(unixSec);
+  return parseVietnamDateCell(s) ?? { y: 0, m: 0, d: 0 };
+}
+__name(todayParts, "todayParts");
+function formatParts(p) {
+  return `${String(p.d).padStart(2, "0")}/${String(p.m).padStart(2, "0")}/${p.y}`;
+}
+__name(formatParts, "formatParts");
+function addCalendarDay(p) {
+  const dt = new Date(Date.UTC(p.y, p.m - 1, p.d + 1));
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+}
+__name(addCalendarDay, "addCalendarDay");
+function isChamCongHeaderRow(row) {
+  const a = String(row[0] ?? "").trim().toLowerCase();
+  const b = String(row[1] ?? "").trim().toLowerCase();
+  return /ngày|ngay|date/.test(a) && /chấm công|cham cong|đi làm|di lam/.test(b);
+}
+__name(isChamCongHeaderRow, "isChamCongHeaderRow");
+function datesToAddUntilToday(last, today) {
+  const todayK = dateKey(today);
+  const out = [];
+  if (!last) {
+    out.push(formatParts(today));
+    return out;
+  }
+  let cursor = last;
+  let cursorK = dateKey(cursor);
+  while (cursorK < todayK) {
+    cursor = addCalendarDay(cursor);
+    cursorK = dateKey(cursor);
+    out.push(formatParts(cursor));
+  }
+  return out;
+}
+__name(datesToAddUntilToday, "datesToAddUntilToday");
+function findLastDateInRows(rows) {
+  let last = null;
+  let lastKey = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    if (isChamCongHeaderRow(row))
+      continue;
+    const p = parseVietnamDateCell(row[0]);
+    if (!p)
+      continue;
+    const k = dateKey(p);
+    if (k >= lastKey) {
+      lastKey = k;
+      last = p;
+    }
+  }
+  return last;
+}
+__name(findLastDateInRows, "findLastDateInRows");
+function dateExistsInRows(rows, target) {
+  const tk = dateKey(target);
+  for (const row of rows) {
+    if (isChamCongHeaderRow(row ?? []))
+      continue;
+    const p = parseVietnamDateCell(row?.[0]);
+    if (p && dateKey(p) === tk)
+      return true;
+  }
+  return false;
+}
+__name(dateExistsInRows, "dateExistsInRows");
+async function insertDateRowsAt(accessToken, spreadsheetId, tabName, rows, insertAt, dateLabels) {
+  if (!dateLabels.length)
+    return;
+  const tables = await sheetsSpreadsheetTables(accessToken, spreadsheetId);
+  const table = tables.find((t) => t.sheetTitle === tabName);
+  if (table?.tableId) {
+    for (const ngay of dateLabels) {
+      await sheetsAppendTableRow(accessToken, spreadsheetId, table.tableId, [
+        ngay,
+        false,
+        "",
+        "",
+        "",
+        ""
+      ]);
+    }
+    return;
+  }
+  const sheetId = table?.sheetId ?? await sheetIdForTitle(accessToken, spreadsheetId, tabName);
+  if (sheetId == null)
+    return;
+  const requests = [];
+  for (let n = 0; n < dateLabels.length; n++) {
+    const at = insertAt + n;
+    requests.push({
+      insertDimension: {
+        range: {
+          sheetId,
+          dimension: "ROWS",
+          startIndex: at,
+          endIndex: at + 1
+        },
+        inheritFromBefore: at > 0
+      }
+    });
+  }
+  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, requests);
+  const valueRows = dateLabels.map((ngay) => [ngay, false, "", "", "", ""]);
+  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+    {
+      updateCells: {
+        range: {
+          sheetId,
+          startRowIndex: insertAt,
+          endRowIndex: insertAt + dateLabels.length,
+          startColumnIndex: 0,
+          endColumnIndex: DATA_COLS
+        },
+        rows: valueRows.map((cells) => ({
+          values: cells.map((v) => {
+            if (typeof v === "boolean")
+              return { userEnteredValue: { boolValue: v } };
+            return { userEnteredValue: { stringValue: String(v) } };
+          })
+        })),
+        fields: "userEnteredValue"
+      }
+    }
+  ]);
+}
+__name(insertDateRowsAt, "insertDateRowsAt");
+async function ensureTodayDateRowsForTab(accessToken, spreadsheetId, tabName, unixSec) {
+  const q = quoteSheet2(tabName);
+  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+  const rows = batch[tabName] ?? [];
+  const today = todayParts(unixSec);
+  if (today.y <= 0)
+    return 0;
+  if (dateExistsInRows(rows, today))
+    return 0;
+  const last = findLastDateInRows(rows);
+  const toAdd = datesToAddUntilToday(last, today);
+  if (!toAdd.length)
+    return 0;
+  let insertAfter = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const p = parseVietnamDateCell(rows[i]?.[0]);
+    if (p) {
+      insertAfter = i + 1;
+      break;
+    }
+  }
+  if (insertAfter <= 0) {
+    for (let i = 0; i < rows.length; i++) {
+      if (isChamCongHeaderRow(rows[i] ?? [])) {
+        insertAfter = i + 1;
+        break;
+      }
+    }
+  }
+  if (insertAfter <= 0)
+    insertAfter = 1;
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, rows, insertAfter, toAdd);
+  return toAdd.length;
+}
+__name(ensureTodayDateRowsForTab, "ensureTodayDateRowsForTab");
+async function sheetIdForTitle(accessToken, spreadsheetId, title) {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(title,sheetId))`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok)
+    return null;
+  const json = await res.json();
+  for (const s of json.sheets ?? []) {
+    if (s.properties?.title === title && s.properties.sheetId != null) {
+      return s.properties.sheetId;
+    }
+  }
+  return null;
+}
+__name(sheetIdForTitle, "sheetIdForTitle");
+async function ensureTodayDateRowsAllTabs(accessToken, spreadsheetId, unixSec) {
+  const titles = listChamCongEmployeeTabs(await sheetsListTabTitles(accessToken, spreadsheetId));
+  let rowsAdded = 0;
+  for (const tab of titles) {
+    if (isChamCongSystemTab(tab))
+      continue;
+    try {
+      rowsAdded += await ensureTodayDateRowsForTab(accessToken, spreadsheetId, tab, unixSec);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[ChamCong] roll dates ${tab}: ${msg}`);
+    }
+  }
+  return { tabs: titles.length, rowsAdded };
+}
+__name(ensureTodayDateRowsAllTabs, "ensureTodayDateRowsAllTabs");
+
+// lib/luongNvConfig.ts
+var DEFAULT_LUONG_CO_BAN_VND_THANG = 1e7;
+var DEFAULT_TY_GIA_VND_PER_USD = 25500;
+function buildLuongNvConfig(tyGiaF2, sourceTab) {
+  const luongCoBanVndThang = DEFAULT_LUONG_CO_BAN_VND_THANG;
+  const tyGiaVndPerUsd = tyGiaF2 > 0 ? tyGiaF2 : DEFAULT_TY_GIA_VND_PER_USD;
+  const luongCoBanUsdThang = luongCoBanVndThang / tyGiaVndPerUsd;
+  return {
+    luongCoBanVndThang,
+    tyGiaVndPerUsd,
+    luongCoBanUsdThang,
+    tyGiaSourceTab: sourceTab
+  };
+}
+__name(buildLuongNvConfig, "buildLuongNvConfig");
+function calcBaseSalaryUsd(workingDays, daysInMonth, luongCoBanUsdThang) {
+  if (daysInMonth <= 0 || luongCoBanUsdThang <= 0)
+    return 0;
+  return luongCoBanUsdThang / daysInMonth * workingDays;
+}
+__name(calcBaseSalaryUsd, "calcBaseSalaryUsd");
+
+// lib/luongNvReport.ts
+var HOA_HONG_RATE = 0.01;
+var CONG_NO_THU_EXCLUSIONS = [
+  { name: "ROKER", amount: 3e3 },
+  { name: "GM", amount: 8e3 }
+];
+function daysInCalendarMonth(monthIso) {
+  const m = monthIso.match(/^(\d{4})-(\d{2})$/);
+  if (!m)
+    return 30;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  return new Date(y, mo, 0).getDate();
+}
+__name(daysInCalendarMonth, "daysInCalendarMonth");
+function monthFromIsoDate(iso) {
+  const d = flexibleDateToIso(iso);
+  return d.length >= 7 ? d.slice(0, 7) : "";
+}
+__name(monthFromIsoDate, "monthFromIsoDate");
+function dayOfMonthFromIso(iso) {
+  const d = flexibleDateToIso(iso);
+  const m = d.match(/^\d{4}-\d{2}-(\d{2})$/);
+  return m ? Number(m[1]) : 0;
+}
+__name(dayOfMonthFromIso, "dayOfMonthFromIso");
+function isAttendanceTick(cell) {
+  if (cell === true)
+    return true;
+  if (cell === false || cell == null)
+    return false;
+  if (typeof cell === "number")
+    return Number.isFinite(cell) && cell !== 0;
+  const s = String(cell).trim();
+  if (!s)
+    return false;
+  const low = s.toLowerCase();
+  if (low === "false" || low === "0" || low === "-" || low === "kh\xF4ng" || low === "khong")
+    return false;
+  return /^(true|x|✓|✔|v|1|có|co|ok|yes)$/i.test(s);
+}
+__name(isAttendanceTick, "isAttendanceTick");
+function parseDayFromColumnA(cell, monthIso) {
+  if (cell == null || cell === "")
+    return null;
+  if (typeof cell === "number" && Number.isFinite(cell)) {
+    if (cell > 35e3 && cell < 65e3 && Math.floor(cell) === cell) {
+      const iso2 = flexibleDateToIso(String(cell));
+      const month = monthFromIsoDate(iso2);
+      const day2 = dayOfMonthFromIso(iso2);
+      return month && day2 ? { month, day: day2 } : null;
+    }
+    const day = Math.floor(cell);
+    if (day >= 1 && day <= 31)
+      return { month: monthIso, day };
+    return null;
+  }
+  const raw = String(cell).trim();
+  if (!raw)
+    return null;
+  const iso = flexibleDateToIso(raw);
+  if (iso.length >= 10) {
+    return { month: monthFromIsoDate(iso), day: dayOfMonthFromIso(iso) };
+  }
+  const dm = raw.match(/^(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?$/);
+  if (dm) {
+    const day = Number(dm[1]);
+    const mo = Number(dm[2]);
+    const y = dm[3] ? Number(dm[3].length === 2 ? `20${dm[3]}` : dm[3]) : Number(monthIso.slice(0, 4));
+    const month = `${y}-${String(mo).padStart(2, "0")}`;
+    return day >= 1 && day <= 31 ? { month, day } : null;
+  }
+  const n = Number(raw.replace(",", "."));
+  if (Number.isFinite(n) && n >= 1 && n <= 31 && Math.floor(n) === n) {
+    return { month: monthIso, day: n };
+  }
+  return null;
+}
+__name(parseDayFromColumnA, "parseDayFromColumnA");
+function dataRowStartIndex(rows) {
+  return rows.length > 0 && isHeaderRow2(rows[0]) ? 1 : 0;
+}
+__name(dataRowStartIndex, "dataRowStartIndex");
+function rowInMonthScope(row, monthIso, cutoffDay) {
+  const parsed = parseDayFromColumnA(row[0], monthIso);
+  if (!parsed || parsed.month !== monthIso)
+    return null;
+  if (cutoffDay != null && parsed.day > cutoffDay)
+    return null;
+  return parsed;
+}
+__name(rowInMonthScope, "rowInMonthScope");
+function countWorkingDaysInMonth(rows, monthIso, cutoffDay) {
+  let count = 0;
+  const start = dataRowStartIndex(rows);
+  for (let i = start; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    if (!rowInMonthScope(row, monthIso, cutoffDay))
+      continue;
+    if (!isAttendanceTick(row[1]))
+      continue;
+    count++;
+  }
+  return count;
+}
+__name(countWorkingDaysInMonth, "countWorkingDaysInMonth");
+function sumFinesInMonth(rows, monthIso, cutoffDay) {
+  return sumUsdColumnInMonth(rows, monthIso, cutoffDay, 3);
+}
+__name(sumFinesInMonth, "sumFinesInMonth");
+function previousMonthIso(monthIso) {
+  const m = monthIso.match(/^(\d{4})-(\d{2})$/);
+  if (!m)
+    return monthIso;
+  let y = Number(m[1]);
+  let mo = Number(m[2]) - 1;
+  if (mo < 1) {
+    mo = 12;
+    y -= 1;
+  }
+  return `${y}-${String(mo).padStart(2, "0")}`;
+}
+__name(previousMonthIso, "previousMonthIso");
+function sumAdvanceInMonth(rows, monthIso, cutoffDay) {
+  return sumUsdColumnInMonth(rows, monthIso, cutoffDay, 2);
+}
+__name(sumAdvanceInMonth, "sumAdvanceInMonth");
+function commissionForMonth(thuChi, monthIso, hhLoaiTruRules) {
+  const agg = aggregateThuChiMonth(thuChi, monthIso, null, hhLoaiTruRules);
+  return Math.max(0, agg.netThu - agg.tongChi) * HOA_HONG_RATE;
+}
+__name(commissionForMonth, "commissionForMonth");
+function calcEmployeeGrossBeforeAdvance(rows, monthIso, cutoffDay, commissionUsd, config) {
+  const dim = daysInCalendarMonth(monthIso);
+  const workingDays = countWorkingDaysInMonth(rows, monthIso, cutoffDay);
+  const baseSalaryUsd = calcBaseSalaryUsd(workingDays, dim, config.luongCoBanUsdThang);
+  const tienPhatUsd = sumFinesInMonth(rows, monthIso, cutoffDay);
+  const tienThuongUsd = sumBonusInMonth(rows, monthIso, cutoffDay);
+  return baseSalaryUsd + commissionUsd - tienPhatUsd + tienThuongUsd;
+}
+__name(calcEmployeeGrossBeforeAdvance, "calcEmployeeGrossBeforeAdvance");
+function computeAdvanceCarryOutForMonth(rows, monthIso, thuChi, hhLoaiTruRules, config) {
+  const commissionUsd = commissionForMonth(thuChi, monthIso, hhLoaiTruRules);
+  const gross = calcEmployeeGrossBeforeAdvance(rows, monthIso, null, commissionUsd, config);
+  const pool = sumAdvanceInMonth(rows, monthIso, null);
+  return Math.max(0, pool - gross);
+}
+__name(computeAdvanceCarryOutForMonth, "computeAdvanceCarryOutForMonth");
+function calcTienUngForPeriod(rows, monthIso, cutoffDay, thuChi, hhLoaiTruRules, config) {
+  const commissionUsd = commissionForMonth(thuChi, monthIso, hhLoaiTruRules);
+  const gross = calcEmployeeGrossBeforeAdvance(rows, monthIso, cutoffDay, commissionUsd, config);
+  const tienUngUsd = sumAdvanceInMonth(rows, monthIso, cutoffDay);
+  return { tienUngUsd, carryOutUsd: Math.max(0, tienUngUsd - gross) };
+}
+__name(calcTienUngForPeriod, "calcTienUngForPeriod");
+function sumBonusInMonth(rows, monthIso, cutoffDay) {
+  return sumUsdColumnInMonth(rows, monthIso, cutoffDay, 4);
+}
+__name(sumBonusInMonth, "sumBonusInMonth");
+function sumUsdColumnInMonth(rows, monthIso, cutoffDay, colIndex) {
+  let total = 0;
+  const start = dataRowStartIndex(rows);
+  for (let i = start; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    if (!rowInMonthScope(row, monthIso, cutoffDay))
+      continue;
+    total += num(row[colIndex]);
+  }
+  return total;
+}
+__name(sumUsdColumnInMonth, "sumUsdColumnInMonth");
+function isHeaderRow2(row) {
+  const a = String(row[0] ?? "").trim().toLowerCase();
+  const b = String(row[1] ?? "").trim().toLowerCase();
+  const d = String(row[3] ?? "").trim().toLowerCase();
+  const e = String(row[4] ?? "").trim().toLowerCase();
+  if (!a && !b && !d && !e)
+    return false;
+  return /ngày|ngay|date|stt|thứ|thu/.test(a) || /chấm công|cham cong|đi làm|di lam|tick|cc/.test(b) || /phạt|phat|tiền phạt|tien phat/.test(d) || /thưởng|thuong|bonus/.test(e);
+}
+__name(isHeaderRow2, "isHeaderRow");
+function normalizeName2(s) {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+__name(normalizeName2, "normalizeName");
+function nameMatches2(haystack, needle) {
+  const h = normalizeName2(haystack);
+  const n = normalizeName2(needle);
+  if (!h || !n)
+    return false;
+  return h === n || h.includes(n) || n.includes(h);
+}
+__name(nameMatches2, "nameMatches");
+function isExcludedCongNoThuPayment(thu, ghiChu) {
+  if (thu <= 0)
+    return false;
+  for (const ex of CONG_NO_THU_EXCLUSIONS) {
+    if (Math.abs(thu - ex.amount) > 9e-3)
+      continue;
+    if (nameMatches2(ghiChu, ex.name))
+      return true;
+  }
+  return false;
+}
+__name(isExcludedCongNoThuPayment, "isExcludedCongNoThuPayment");
+function aggregateThuChiMonth(thuChi, monthIso, cutoffDay, hhLoaiTruRules = []) {
+  let tongThu = 0;
+  let tongChi = 0;
+  let thuExcludedCongNo = 0;
+  let thuExcludedHhLoaiTru = 0;
+  let chiExcludedHhLoaiTru = 0;
+  for (const r of thuChi) {
+    const iso = flexibleDateToIso(r.ngay ?? "");
+    if (!iso || monthFromIsoDate(iso) !== monthIso)
+      continue;
+    const day = dayOfMonthFromIso(iso);
+    if (cutoffDay != null && day > cutoffDay)
+      continue;
+    const thu = num(r.thu);
+    const chi = num(r.chi);
+    if (chi > 0 && isChiExcludedByHhLoaiTruRules(r, hhLoaiTruRules)) {
+      chiExcludedHhLoaiTru += chi;
+    } else {
+      tongChi += chi;
+    }
+    if (isExcludedCongNoThuPayment(thu, r.ghiChu ?? "")) {
+      thuExcludedCongNo += thu;
+      continue;
+    }
+    if (isThuExcludedByHhLoaiTruRules(r, hhLoaiTruRules)) {
+      thuExcludedHhLoaiTru += thu;
+      continue;
+    }
+    tongThu += thu;
+  }
+  const thuExcluded = thuExcludedCongNo + thuExcludedHhLoaiTru;
+  return {
+    tongThu,
+    tongChi,
+    thuExcludedCongNo,
+    thuExcludedHhLoaiTru,
+    chiExcludedHhLoaiTru,
+    thuExcluded,
+    netThu: tongThu
+  };
+}
+__name(aggregateThuChiMonth, "aggregateThuChiMonth");
+function currentMonthFromContext(todayIso) {
+  return todayIso.slice(0, 7);
+}
+__name(currentMonthFromContext, "currentMonthFromContext");
+function formatMonthLabel(monthIso) {
+  const m = monthIso.match(/^(\d{4})-(\d{2})$/);
+  if (!m)
+    return monthIso;
+  return `Th\xE1ng ${m[2]}/${m[1]}`;
+}
+__name(formatMonthLabel, "formatMonthLabel");
+function buildPeriod(kind, monthIso, cutoffDay, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config) {
+  const dim = daysInCalendarMonth(monthIso);
+  const thuChiAgg = aggregateThuChiMonth(thuChi, monthIso, cutoffDay, hhLoaiTruRules);
+  const profit = thuChiAgg.netThu - thuChiAgg.tongChi;
+  const commissionUsd = Math.max(0, profit) * HOA_HONG_RATE;
+  const employees = attendanceSheets.map((sheet) => {
+    const workingDays = countWorkingDaysInMonth(sheet.rows, monthIso, cutoffDay);
+    const tienPhatUsd = sumFinesInMonth(sheet.rows, monthIso, cutoffDay);
+    const tienThuongUsd = sumBonusInMonth(sheet.rows, monthIso, cutoffDay);
+    const baseSalaryUsd = calcBaseSalaryUsd(workingDays, dim, config.luongCoBanUsdThang);
+    const { tienUngUsd, carryOutUsd } = calcTienUngForPeriod(
+      sheet.rows,
+      monthIso,
+      cutoffDay,
+      thuChi,
+      hhLoaiTruRules,
+      config
+    );
+    const tongLuongUsd = baseSalaryUsd + commissionUsd - tienPhatUsd + tienThuongUsd;
+    const thucNhanUsd = tongLuongUsd - tienUngUsd;
+    const row = {
+      name: sheet.sheetTitle,
+      workingDays,
+      daysInMonth: dim,
+      baseSalaryUsd,
+      commissionUsd,
+      tongLuongUsd,
+      thucNhanUsd,
+      totalSalaryUsd: thucNhanUsd,
+      tienPhatUsd,
+      tienThuongUsd,
+      tienUngUsd
+    };
+    if (kind === "previous" && carryOutUsd > 9e-3) {
+      row.tienUngCarryOutUsd = carryOutUsd;
+    }
+    return row;
+  });
+  employees.sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  const mo = monthIso.slice(5, 7);
+  const yr = monthIso.slice(0, 4);
+  let label = formatMonthLabel(monthIso);
+  let payNote = "";
+  if (kind === "previous") {
+    const payMo = currentMonthFromContext(todayIso).slice(5, 7);
+    const payYr = currentMonthFromContext(todayIso).slice(0, 4);
+    payNote = `L\u01B0\u01A1ng th\xE1ng tr\u01B0\u1EDBc \u2014 chi tr\u1EA3 k\u1EF3 ng\xE0y 01/${payMo}/${payYr}`;
+    label = `${formatMonthLabel(monthIso)} (\u0111\u1EE7 th\xE1ng)`;
+  } else {
+    const d = cutoffDay ?? dim;
+    payNote = `L\u01B0\u01A1ng th\xE1ng hi\u1EC7n t\u1EA1i \u2014 t\xEDnh t\u1EDBi ng\xE0y ${String(d).padStart(2, "0")}/${mo}/${yr}`;
+    label = `${formatMonthLabel(monthIso)} (t\u1EDBi ng\xE0y ${String(d).padStart(2, "0")}/${mo})`;
+  }
+  return {
+    month: monthIso,
+    label,
+    kind,
+    payNote,
+    cutoffDay,
+    daysInMonth: dim,
+    commissionBase: {
+      ...thuChiAgg,
+      profit,
+      commissionUsd
+    },
+    employees
+  };
+}
+__name(buildPeriod, "buildPeriod");
+function buildLuongNvReport(attendanceSheets, thuChi, todayIso, hhLoaiTruRules = [], config) {
+  const currentMonth = todayIso.slice(0, 7);
+  const previousMonth = previousMonthIso(currentMonth);
+  const todayDay = dayOfMonthFromIso(todayIso);
+  return {
+    todayVietnam: todayIso,
+    currentMonth,
+    previousMonth,
+    config,
+    periods: [
+      buildPeriod("previous", previousMonth, null, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config),
+      buildPeriod("current", currentMonth, todayDay, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config)
+    ]
+  };
+}
+__name(buildLuongNvReport, "buildLuongNvReport");
+function filterAttendanceSheetTitles(titles) {
+  return titles.filter((t) => !isChamCongSystemTab(t));
+}
+__name(filterAttendanceSheetTitles, "filterAttendanceSheetTitles");
+
+// lib/tienUngCarrySync.ts
+function quoteSheet3(title) {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+__name(quoteSheet3, "quoteSheet");
+function previousMonthIso2(monthIso) {
+  const m = monthIso.match(/^(\d{4})-(\d{2})$/);
+  if (!m)
+    return monthIso;
+  let y = Number(m[1]);
+  let mo = Number(m[2]) - 1;
+  if (mo < 1) {
+    mo = 12;
+    y -= 1;
+  }
+  return `${y}-${String(mo).padStart(2, "0")}`;
+}
+__name(previousMonthIso2, "previousMonthIso");
+function isChamCongHeaderRow2(row) {
+  const a = String(row[0] ?? "").trim().toLowerCase();
+  const b = String(row[1] ?? "").trim().toLowerCase();
+  return /ngày|ngay|date/.test(a) && /chấm công|cham cong|đi làm|di lam/.test(b);
+}
+__name(isChamCongHeaderRow2, "isChamCongHeaderRow");
+function findRowIndexForMonthDay(rows, monthIso, day) {
+  const start = rows.length > 0 && isChamCongHeaderRow2(rows[0]) ? 1 : 0;
+  for (let i = start; i < rows.length; i++) {
+    const iso = flexibleDateToIso(String(rows[i]?.[0] ?? ""));
+    if (iso.length < 10 || iso.slice(0, 7) !== monthIso)
+      continue;
+    if (Number(iso.slice(8, 10)) === day)
+      return i;
+  }
+  return null;
+}
+__name(findRowIndexForMonthDay, "findRowIndexForMonthDay");
+async function syncAdvanceCarryToFirstDayAllTabs(accessToken, spreadsheetId, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config, reloadSheets) {
+  const currentMonth = todayIso.slice(0, 7);
+  const previousMonth = previousMonthIso2(currentMonth);
+  let updated = 0;
+  for (const sheet of attendanceSheets) {
+    const carryOut = computeAdvanceCarryOutForMonth(
+      sheet.rows,
+      previousMonth,
+      thuChi,
+      hhLoaiTruRules,
+      config
+    );
+    const rowIdx = findRowIndexForMonthDay(sheet.rows, currentMonth, 1);
+    if (rowIdx == null)
+      continue;
+    const currentC = num(sheet.rows[rowIdx]?.[2]);
+    if (carryOut <= 9e-3)
+      continue;
+    if (Math.abs(currentC - carryOut) < 9e-3)
+      continue;
+    await sheetsPutValues(
+      accessToken,
+      spreadsheetId,
+      `${quoteSheet3(sheet.sheetTitle)}!C${rowIdx + 1}`,
+      [[carryOut]],
+      "RAW"
+    );
+    updated++;
+  }
+  if (updated > 0)
+    return reloadSheets();
+  return attendanceSheets;
+}
+__name(syncAdvanceCarryToFirstDayAllTabs, "syncAdvanceCarryToFirstDayAllTabs");
+
+// lib/telegramSend.ts
+async function telegramSendMessage(botToken, chatId, text) {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text })
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("telegram sendMessage", res.status, err);
+    throw new Error(`Telegram sendMessage ${res.status}: ${err}`);
+  }
+}
+__name(telegramSendMessage, "telegramSendMessage");
+
+// lib/luongNvMonthlyBot.ts
+var CHAT_NOI_BO_DEFAULT = "-1003978420142";
+function noiBoChatId(env) {
+  const v = env.TELEGRAM_NOI_BO_CHAT_ID;
+  return v && String(v).trim() || CHAT_NOI_BO_DEFAULT;
+}
+__name(noiBoChatId, "noiBoChatId");
+var DEFAULT_SPREADSHEET_ID_CHAM_CONG2 = "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w";
+function spreadsheetIdChamCong2(env) {
+  const v = env.SPREADSHEET_ID_CHAM_CONG?.trim();
+  return v || DEFAULT_SPREADSHEET_ID_CHAM_CONG2;
+}
+__name(spreadsheetIdChamCong2, "spreadsheetIdChamCong");
+function quoteSheetTitle(title) {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+__name(quoteSheetTitle, "quoteSheetTitle");
+function todayIsoVietnam() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(/* @__PURE__ */ new Date());
+}
+__name(todayIsoVietnam, "todayIsoVietnam");
+async function loadAttendanceSheets(token, spreadsheetId) {
+  const titles = filterAttendanceSheetTitles(await sheetsListTabTitles(token, spreadsheetId));
+  if (!titles.length)
+    return [];
+  const ranges = titles.map((t) => `${quoteSheetTitle(t)}!A1:F400`);
+  const { data: batch } = await sheetsBatchGetMergeSafe(token, spreadsheetId, ranges);
+  return titles.map((sheetTitle) => ({
+    sheetTitle,
+    rows: batch[sheetTitle] ?? []
+  }));
+}
+__name(loadAttendanceSheets, "loadAttendanceSheets");
+function fmtUsd(n) {
+  if (!Number.isFinite(n))
+    return "\u2014";
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(n);
+}
+__name(fmtUsd, "fmtUsd");
+function fmtUsdOrDash(n) {
+  return n > 9e-3 ? fmtUsd(n) : "\u2014";
+}
+__name(fmtUsdOrDash, "fmtUsdOrDash");
+function monthLabelVi(monthIso) {
+  const m = monthIso.match(/^(\d{4})-(\d{2})$/);
+  if (!m)
+    return monthIso;
+  return `${m[2]}/${m[1]}`;
+}
+__name(monthLabelVi, "monthLabelVi");
+function formatEmployeeBlock(emp, period) {
+  const tongLuong = emp.tongLuongUsd ?? 0;
+  const thucNhan = emp.thucNhanUsd ?? emp.totalSalaryUsd ?? tongLuong - (emp.tienUngUsd ?? 0);
+  const lines = [
+    `T\xEAn: ${emp.name}`,
+    `Ng\xE0y C\xF4ng: ${emp.workingDays} / ${period.daysInMonth}`,
+    `L\u01B0\u01A1ng CB: ${fmtUsd(emp.baseSalaryUsd)}`,
+    `HH: ${fmtUsd(emp.commissionUsd)}`,
+    `Ti\u1EC1n Ph\u1EA1t: ${fmtUsdOrDash(emp.tienPhatUsd)}`,
+    `Ti\u1EC1n Th\u01B0\u1EDFng: ${fmtUsdOrDash(emp.tienThuongUsd)}`,
+    `T\u1ED5ng L\u01B0\u01A1ng: ${fmtUsd(tongLuong)}`,
+    `Ti\u1EC1n \u1EE8ng: ${fmtUsdOrDash(emp.tienUngUsd)}`,
+    `Th\u1EF1c Nh\u1EADn: ${fmtUsd(thucNhan)}`
+  ];
+  return lines.join("\n");
+}
+__name(formatEmployeeBlock, "formatEmployeeBlock");
+function buildLuongNvMonthlyTelegramText(period) {
+  const header = `B\u1EA3ng L\u01B0\u01A1ng Th\xE1ng ${monthLabelVi(period.month)}`;
+  const blocks = (period.employees ?? []).map((emp) => formatEmployeeBlock(emp, period));
+  if (!blocks.length)
+    return `${header}
+
+(Ch\u01B0a c\xF3 nh\xE2n vi\xEAn tr\xEAn file ch\u1EA5m c\xF4ng)`;
+  return `${header}
+
+${blocks.join("\n\n")}`;
+}
+__name(buildLuongNvMonthlyTelegramText, "buildLuongNvMonthlyTelegramText");
+async function runLuongNvMonthlyBot(env) {
+  const botToken = env.TELEGRAM_LUONG_NV_BOT_TOKEN?.trim();
+  if (!botToken) {
+    console.error("[luongNvMonthlyBot] Thi\u1EBFu TELEGRAM_LUONG_NV_BOT_TOKEN (@Blackcorp7777_bot)");
+    return { sent: false, month: "" };
+  }
+  const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const idMain = env.SPREADSHEET_ID_MAIN;
+  const idChamCong = spreadsheetIdChamCong2(env);
+  const todayVn = todayIsoVietnam();
+  const batchMain = await sheetsBatchGetMergeSafe(token, idMain, [
+    `'THU_CHI'!A1:E2000`,
+    `${quoteSheetTitle(HH_LOAI_TRU_TAB)}!A1:E500`
+  ]);
+  const tcBody = batchMain.data["THU_CHI"] ?? [];
+  const thuChiData = tcBody.length > 1 ? tcBody.slice(1).map(normalizeThuChiDataRow) : [];
+  const thuChiModels = thuChiData.map((r) => ({
+    ngay: r[0] ?? "",
+    thu: r[1] ?? "",
+    chi: r[2] ?? "",
+    ghiChu: r[3] ?? ""
+  }));
+  const hhLoaiTruRaw = batchMain.data[HH_LOAI_TRU_TAB] ?? [];
+  let hhLoaiTruFormatted = [];
+  try {
+    const hhFmt = await sheetsBatchGetMergeSafe(
+      token,
+      idMain,
+      [`${quoteSheetTitle(HH_LOAI_TRU_TAB)}!A1:E500`],
+      "FORMATTED_VALUE"
+    );
+    hhLoaiTruFormatted = hhFmt.data[HH_LOAI_TRU_TAB] ?? [];
+  } catch {
+  }
+  const hhLoaiTru = parseHhLoaiTruSheetRows(hhLoaiTruRaw, hhLoaiTruFormatted);
+  let tyGia = 0;
+  let sourceTab = CHAM_CONG_TEMPLATE_TAB;
+  const tyGiaTabs = [CHAM_CONG_TEMPLATE_TAB, "SU_BEO"];
+  for (const tab of tyGiaTabs) {
+    const v = await readTyGiaF2(token, idChamCong, tab);
+    if (v > 0) {
+      tyGia = v;
+      sourceTab = tab;
+      break;
+    }
+  }
+  if (tyGia <= 0) {
+    const titles = await sheetsListTabTitles(token, idChamCong);
+    for (const t of listChamCongEmployeeTabs(titles)) {
+      const v = await readTyGiaF2(token, idChamCong, t);
+      if (v > 0) {
+        tyGia = v;
+        sourceTab = t;
+        break;
+      }
+    }
+  }
+  const luongNvConfig = buildLuongNvConfig(tyGia, sourceTab);
+  await ensureTodayDateRowsAllTabs(token, idChamCong);
+  let attendanceSheets = await loadAttendanceSheets(token, idChamCong);
+  attendanceSheets = await syncAdvanceCarryToFirstDayAllTabs(
+    token,
+    idChamCong,
+    attendanceSheets,
+    thuChiModels,
+    todayVn,
+    hhLoaiTru,
+    luongNvConfig,
+    () => loadAttendanceSheets(token, idChamCong)
+  );
+  const report = buildLuongNvReport(attendanceSheets, thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
+  const previousPeriod = report.periods.find((p) => p.kind === "previous");
+  if (!previousPeriod) {
+    console.error("[luongNvMonthlyBot] Kh\xF4ng c\xF3 k\u1EF3 th\xE1ng tr\u01B0\u1EDBc");
+    return { sent: false, month: "" };
+  }
+  const text = buildLuongNvMonthlyTelegramText(previousPeriod);
+  await telegramSendMessage(botToken, noiBoChatId(env), text);
+  return { sent: true, month: previousPeriod.month };
+}
+__name(runLuongNvMonthlyBot, "runLuongNvMonthlyBot");
+
+// api/luong-nv-cron.ts
+var onRequestGet3 = /* @__PURE__ */ __name(async (context) => {
+  const { env, request } = context;
+  const secret = env.LUONG_NV_CRON_SECRET?.trim();
+  if (!secret) {
+    return Response.json(
+      { error: "Thi\u1EBFu LUONG_NV_CRON_SECRET tr\xEAn Cloudflare Pages." },
+      { status: 503 }
+    );
+  }
+  const url = new URL(request.url);
+  const provided = url.searchParams.get("secret")?.trim() || request.headers.get("X-Cron-Secret")?.trim() || "";
+  if (provided !== secret) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  try {
+    const result = await runLuongNvMonthlyBot(env);
+    return Response.json({ ok: true, ...result });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: msg }, { status: 500 });
+  }
+}, "onRequestGet");
+
+// api/luong-nv-exclusions.ts
+var HH_LOAI_TRU_MAX_ROW = 500;
+function quoteSheetTitle2(title) {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+__name(quoteSheetTitle2, "quoteSheetTitle");
+function hhLoaiTruRange() {
+  return `${quoteSheetTitle2(HH_LOAI_TRU_TAB)}!A1:E${HH_LOAI_TRU_MAX_ROW}`;
+}
+__name(hhLoaiTruRange, "hhLoaiTruRange");
+async function readHhLoaiTruFromSheet(token, spreadsheetId) {
+  const range = hhLoaiTruRange();
+  const [rawBatch, fmtBatch] = await Promise.all([
+    sheetsBatchGetMergeSafe(token, spreadsheetId, [range], "UNFORMATTED_VALUE"),
+    sheetsBatchGetMergeSafe(token, spreadsheetId, [range], "FORMATTED_VALUE")
+  ]);
+  return parseHhLoaiTruSheetRows(
+    rawBatch.data[HH_LOAI_TRU_TAB] ?? [],
+    fmtBatch.data[HH_LOAI_TRU_TAB] ?? []
+  );
+}
+__name(readHhLoaiTruFromSheet, "readHhLoaiTruFromSheet");
+async function appendNewHhLoaiTruRules(token, spreadsheetId, incoming) {
+  const existing = await readHhLoaiTruFromSheet(token, spreadsheetId);
+  const toAppend = newHhLoaiTruRulesOnly(existing, incoming);
+  if (toAppend.length > 0) {
+    const q = quoteSheetTitle2(HH_LOAI_TRU_TAB);
+    await sheetsValuesAppend(
+      token,
+      spreadsheetId,
+      `${q}!A:E`,
+      toAppend.map((r) => hhLoaiTruRowValues(r)),
+      "RAW"
+    );
+  }
+  const merged = await readHhLoaiTruFromSheet(token, spreadsheetId);
+  return { merged, appended: toAppend.length };
+}
+__name(appendNewHhLoaiTruRules, "appendNewHhLoaiTruRules");
+async function requireUser2(env, request) {
+  const user = await verifySession(env, request.headers.get("Cookie"));
+  if (!user)
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  return null;
+}
+__name(requireUser2, "requireUser");
+var onRequestGet4 = /* @__PURE__ */ __name(async (context) => {
+  const deny = await requireUser2(context.env, context.request);
+  if (deny)
+    return deny;
+  if (!context.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+    return Response.json({ error: "Thi\u1EBFu GOOGLE_SERVICE_ACCOUNT_JSON." }, { status: 503 });
+  }
+  try {
+    const token = await getSheetsAccessToken(context.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const rules = await readHhLoaiTruFromSheet(token, context.env.SPREADSHEET_ID_MAIN);
+    return Response.json({ ok: true, exclusions: rules });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}, "onRequestGet");
+var onRequestPut = /* @__PURE__ */ __name(async (context) => {
+  const deny = await requireUser2(context.env, context.request);
+  if (deny)
+    return deny;
+  if (!context.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+    return Response.json({ error: "Thi\u1EBFu GOOGLE_SERVICE_ACCOUNT_JSON." }, { status: 503 });
+  }
+  let body;
+  try {
+    body = await context.request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const incoming = normalizeHhLoaiTruList(body.exclusions);
+  try {
+    const token = await getSheetsAccessToken(context.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const id = context.env.SPREADSHEET_ID_MAIN;
+    const { merged, appended } = await appendNewHhLoaiTruRules(token, id, incoming);
+    return Response.json({
+      ok: true,
+      exclusions: merged,
+      appended,
+      total: merged.length
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json(
+      {
+        error: `${msg} \u2014 ki\u1EC3m tra tab \xAB${HH_LOAI_TRU_TAB}\xBB tr\xEAn file MAIN v\xE0 quy\u1EC1n service account.`
+      },
+      { status: 500 }
+    );
+  }
+}, "onRequestPut");
+
+// api/reveal-balance.ts
+function timingSafeEqual2(a, b) {
+  if (typeof b !== "string")
+    return false;
+  if (a.length !== b.length)
+    return false;
+  let x = 0;
+  for (let i = 0; i < a.length; i++)
+    x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
+__name(timingSafeEqual2, "timingSafeEqual");
+var onRequestPost4 = /* @__PURE__ */ __name(async (context) => {
+  const { request, env } = context;
+  const user = await verifySession(env, request.headers.get("Cookie"));
+  if (!user)
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const p = body.password ?? "";
+  if (!p)
+    return Response.json({ error: "Thi\u1EBFu m\u1EADt kh\u1EA9u" }, { status: 400 });
+  if (!env.BALANCE_REVEAL_PASSWORD) {
+    return Response.json(
+      { error: "C\u1EA5u h\xECnh server thi\u1EBFu BALANCE_REVEAL_PASSWORD (Secret tr\xEAn Cloudflare Pages)." },
+      { status: 503 }
+    );
+  }
+  if (!timingSafeEqual2(p, env.BALANCE_REVEAL_PASSWORD)) {
+    return Response.json({ error: "Sai m\u1EADt kh\u1EA9u" }, { status: 401 });
+  }
+  return Response.json({ ok: true });
+}, "onRequestPost");
+
+// lib/baoCaoTkReport.ts
+function isSubtotalDateCell(a) {
+  const t = (a ?? "").trim();
+  if (!t)
+    return false;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t))
+    return false;
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(t))
+    return false;
+  if (/^\d{1,2}-\d{1,2}\/\d{1,2}/.test(t))
+    return false;
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(t))
+    return false;
+  const n = num(t);
+  if (Number.isFinite(n) && n > 35e3 && n < 65e3 && Math.floor(n) === n)
+    return false;
+  return n !== 0 && /^[\d\s.,]+$/.test(t.replace(/\s/g, ""));
+}
+__name(isSubtotalDateCell, "isSubtotalDateCell");
+function parseBaoCaoNgayFromCell(raw, fallbackYear) {
+  if (raw == null || raw === "")
+    return "";
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (raw > 35e3 && raw < 65e3 && Math.floor(raw) === raw) {
+      return sheetsSerialToIsoDate(Math.floor(raw));
+    }
+    return "";
+  }
+  return parseBaoCaoNgayCell(String(raw).trim(), fallbackYear);
+}
+__name(parseBaoCaoNgayFromCell, "parseBaoCaoNgayFromCell");
+function parseBaoCaoNgayCell(raw, fallbackYear) {
+  const t = (raw ?? "").trim();
+  if (!t || isSubtotalDateCell(t))
+    return "";
+  const iso = flexibleDateToIso(t);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso))
+    return iso;
+  const range = t.match(/^(\d{1,2})(?:-\d{1,2})?[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/);
+  if (range) {
+    let year = range[3] ? Number(range[3]) : fallbackYear ?? (/* @__PURE__ */ new Date()).getFullYear();
+    if (year < 100)
+      year += 2e3;
+    return `${year}-${range[2].padStart(2, "0")}-${range[1].padStart(2, "0")}`;
+  }
+  return "";
+}
+__name(parseBaoCaoNgayCell, "parseBaoCaoNgayCell");
+function sortNguon(a) {
+  return [...a].sort((x, y) => x.nguon.localeCompare(y.nguon, "vi"));
+}
+__name(sortNguon, "sortNguon");
+function addToNguonMap(map, nguon, tieu, thu) {
+  const key = nguon || "\u2014";
+  const cur = map.get(key) ?? { tongTieu: 0, tongThu: 0 };
+  cur.tongTieu += tieu;
+  cur.tongThu += thu;
+  map.set(key, cur);
+}
+__name(addToNguonMap, "addToNguonMap");
+function mapToNguonList(map) {
+  return sortNguon(
+    [...map.entries()].map(([nguon, v]) => ({
+      nguon,
+      tongTieu: v.tongTieu,
+      tongThu: v.tongThu
+    }))
+  );
+}
+__name(mapToNguonList, "mapToNguonList");
+var STATUS_MARKERS = /* @__PURE__ */ new Set(["DONE"]);
+function mergeBaoCaoTkColumnRanges(parts) {
+  const maxLen = Math.max(
+    parts.colA.length,
+    parts.colB.length,
+    parts.colH.length,
+    parts.colI.length,
+    parts.colL.length
+  );
+  const rows = [];
+  for (let i = 0; i < maxLen; i++) {
+    rows.push([
+      parts.colA[i]?.[0] ?? "",
+      parts.colB[i]?.[0] ?? "",
+      parts.colH[i]?.[0] ?? "",
+      parts.colI[i]?.[0] ?? "",
+      parts.colL[i]?.[0] ?? ""
+    ]);
+  }
+  return rows;
+}
+__name(mergeBaoCaoTkColumnRanges, "mergeBaoCaoTkColumnRanges");
+function baoCaoTkColValues(ranges, col) {
+  const letter = col.toUpperCase();
+  const hit = ranges.find((r) => new RegExp(`!${letter}1:${letter}`, "i").test(r.range.replace(/'/g, "")));
+  return hit?.values ?? [];
+}
+__name(baoCaoTkColValues, "baoCaoTkColValues");
+var BAO_CAO_TK_SLIM_COLS = {
+  ngay: 0,
+  mcc: 1,
+  tieuUsd: 2,
+  tongThu: 3,
+  nguon: 4
+};
+function normalizeHeaderLabel(h) {
+  return h.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").trim().toLowerCase();
+}
+__name(normalizeHeaderLabel, "normalizeHeaderLabel");
+function findBaoCaoTkDataStart(mergedRows) {
+  for (let i = 0; i < mergedRows.length; i++) {
+    const row = mergedRows[i] ?? [];
+    const a = normalizeHeaderLabel(String(row[0] ?? ""));
+    const b = normalizeHeaderLabel(String(row[1] ?? ""));
+    if ((a === "ngay" || a.startsWith("ngay")) && (b === "mcc" || b.includes("mcc"))) {
+      return { headerRow: row, bodyRows: mergedRows.slice(i + 1) };
+    }
+  }
+  return { headerRow: mergedRows[0] ?? [], bodyRows: mergedRows.length > 1 ? mergedRows.slice(1) : [] };
+}
+__name(findBaoCaoTkDataStart, "findBaoCaoTkDataStart");
+function detectBaoCaoTkColumns(headerRow) {
+  const cols = { ...BAO_CAO_TK_SLIM_COLS };
+  for (let i = 0; i < headerRow.length; i++) {
+    const h = normalizeHeaderLabel(String(headerRow[i] ?? ""));
+    if (!h)
+      continue;
+    if (h === "ngay" || h.startsWith("ngay"))
+      cols.ngay = i;
+    else if (h === "mcc")
+      cols.mcc = i;
+    else if (h.includes("quy doi") || h.includes("quy \u0111\u1ED5i"))
+      cols.tieuUsd = i;
+    else if (h.includes("tong thu") || h.includes("t\u1ED5ng thu"))
+      cols.tongThu = i;
+    else if (h.includes("nguon") || h.includes("ngu\u1ED3n"))
+      cols.nguon = i;
+  }
+  return cols;
+}
+__name(detectBaoCaoTkColumns, "detectBaoCaoTkColumns");
+function baoCaoTkNum(cell) {
+  if (cell == null || cell === "")
+    return 0;
+  if (typeof cell === "number" && Number.isFinite(cell))
+    return cell;
+  const s = String(cell).trim();
+  if (!s || /%/.test(s))
+    return 0;
+  if (/^[A-Za-zÀ-ỹ\s_-]+$/.test(s) && !/^\d/.test(s))
+    return 0;
+  const n = num(s);
+  return Number.isFinite(n) ? n : 0;
+}
+__name(baoCaoTkNum, "baoCaoTkNum");
+function extractBaoCaoAmounts(rawRow, cols) {
+  const row = Array.isArray(rawRow) ? rawRow : [];
+  return {
+    tieuUsd: baoCaoTkNum(row[cols.tieuUsd]),
+    tongThu: baoCaoTkNum(row[cols.tongThu])
+  };
+}
+__name(extractBaoCaoAmounts, "extractBaoCaoAmounts");
+function extractNguonFromRow(rawRow, cols) {
+  const row = Array.isArray(rawRow) ? rawRow : [];
+  const nguon = String(row[cols.nguon] ?? "").trim();
+  if (nguon && !STATUS_MARKERS.has(nguon.toUpperCase()))
+    return nguon;
+  return "";
+}
+__name(extractNguonFromRow, "extractNguonFromRow");
+function parseBaoCaoTkSheetRows(rawRows, headerRow) {
+  const cols = detectBaoCaoTkColumns(headerRow ?? []);
+  const byDayMccNguon = /* @__PURE__ */ new Map();
+  let currentDate = "";
+  let currentNguon = "";
+  let yearHint = (/* @__PURE__ */ new Date()).getFullYear();
+  for (const raw of rawRows) {
+    const row = Array.isArray(raw) ? raw : [];
+    const bRaw = String(row[cols.mcc] ?? "").trim();
+    if (!bRaw)
+      continue;
+    const dateCell = row[cols.ngay];
+    const aText = dateCell == null ? "" : String(dateCell).trim();
+    if (aText && !isSubtotalDateCell(aText)) {
+      const d = parseBaoCaoNgayFromCell(dateCell, yearHint);
+      if (d) {
+        currentDate = d;
+        yearHint = Number(d.slice(0, 4)) || yearHint;
+      }
+    } else if (typeof dateCell === "number" && Number.isFinite(dateCell)) {
+      const d = parseBaoCaoNgayFromCell(dateCell, yearHint);
+      if (d) {
+        currentDate = d;
+        yearHint = Number(d.slice(0, 4)) || yearHint;
+      }
+    }
+    const nguonCell = extractNguonFromRow(row, cols);
+    if (nguonCell)
+      currentNguon = nguonCell;
+    if (!currentDate)
+      continue;
+    const { tieuUsd, tongThu: iVal } = extractBaoCaoAmounts(row, cols);
+    if (tieuUsd === 0 && iVal === 0)
+      continue;
+    const nguon = nguonCell || currentNguon || "\u2014";
+    const key = `${currentDate}\0${bRaw}\0${nguon}`;
+    const prev = byDayMccNguon.get(key);
+    if (prev) {
+      prev.tongTieu += tieuUsd;
+      prev.tongThu += iVal;
+    } else {
+      byDayMccNguon.set(key, {
+        ngay: currentDate,
+        mcc: bRaw,
+        taiKhoan: "",
+        tenKhach: "",
+        tongTieu: tieuUsd,
+        tongThu: iVal,
+        nguon
+      });
+    }
+  }
+  return [...byDayMccNguon.values()];
+}
+__name(parseBaoCaoTkSheetRows, "parseBaoCaoTkSheetRows");
+function groupMccForDay(rows, nguonFilter) {
+  const filtered = nguonFilter ? rows.filter((r) => (r.nguon || "\u2014") === nguonFilter) : rows;
+  return filtered.map((r) => ({
+    mcc: r.mcc.trim() || "\u2014",
+    nguon: r.nguon || "\u2014",
+    tongTieu: r.tongTieu,
+    tongThu: r.tongThu
+  })).sort((a, b) => {
+    const mc = a.mcc.localeCompare(b.mcc, "vi");
+    return mc !== 0 ? mc : a.nguon.localeCompare(b.nguon, "vi");
+  });
+}
+__name(groupMccForDay, "groupMccForDay");
+function buildChiTieuReport(entries, todayVn) {
+  const byDayMap = /* @__PURE__ */ new Map();
+  const byMonthNguon = /* @__PURE__ */ new Map();
+  const nguonSet = /* @__PURE__ */ new Set();
+  for (const e of entries) {
+    const day = e.ngay;
+    if (!day)
+      continue;
+    const thang = day.slice(0, 7);
+    const nguon = e.nguon || "\u2014";
+    nguonSet.add(nguon);
+    let dayNguon = byDayMap.get(day);
+    if (!dayNguon) {
+      dayNguon = /* @__PURE__ */ new Map();
+      byDayMap.set(day, dayNguon);
+    }
+    addToNguonMap(dayNguon, nguon, e.tongTieu, e.tongThu);
+    let monthNguon = byMonthNguon.get(thang);
+    if (!monthNguon) {
+      monthNguon = /* @__PURE__ */ new Map();
+      byMonthNguon.set(thang, monthNguon);
+    }
+    addToNguonMap(monthNguon, nguon, e.tongTieu, e.tongThu);
+  }
+  const byDay = [...byDayMap.entries()].map(([date, nguonMap]) => {
+    const byNguon = mapToNguonList(nguonMap);
+    return {
+      date,
+      tongTieu: byNguon.reduce((s, x) => s + x.tongTieu, 0),
+      tongThu: byNguon.reduce((s, x) => s + x.tongThu, 0),
+      byNguon
+    };
+  }).sort((a, b) => a.date.localeCompare(b.date));
+  const byMonth = [...byMonthNguon.entries()].map(([thang, nguonMap]) => {
+    const byNguon = mapToNguonList(nguonMap);
+    return {
+      thang,
+      tongTieu: byNguon.reduce((s, x) => s + x.tongTieu, 0),
+      tongThu: byNguon.reduce((s, x) => s + x.tongThu, 0),
+      byNguon
+    };
+  }).sort((a, b) => a.thang.localeCompare(b.thang));
+  const todayRows = entries.filter((e) => e.ngay === todayVn);
+  const todayNguonMap = /* @__PURE__ */ new Map();
+  for (const e of todayRows) {
+    addToNguonMap(todayNguonMap, e.nguon || "\u2014", e.tongTieu, e.tongThu);
+  }
+  const todayByNguon = mapToNguonList(todayNguonMap);
+  return {
+    byMonth,
+    byDay,
+    todayVietnam: {
+      date: todayVn,
+      tongTieu: todayByNguon.reduce((s, x) => s + x.tongTieu, 0),
+      tongThu: todayByNguon.reduce((s, x) => s + x.tongThu, 0),
+      byNguon: todayByNguon,
+      byMcc: groupMccForDay(todayRows)
+    },
+    nguonList: [...nguonSet].sort((a, b) => a.localeCompare(b, "vi"))
+  };
+}
+__name(buildChiTieuReport, "buildChiTieuReport");
+
+// api/sheet.ts
+var SHEETS = {
+  tong_quan: "TONG_QUAN",
+  thu_chi: "THU_CHI",
+  coc: "COC",
+  cong_no: "CONG_NO",
+  ban_dao: "BAN_DAO",
+  bao_cao_tk: "BAO_CAO_TK"
+};
+function todayIsoVietnam2() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(/* @__PURE__ */ new Date());
+}
+__name(todayIsoVietnam2, "todayIsoVietnam");
+function groupByDayMonth(rows) {
+  const byDayMap = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    const day = flexibleDateToIso(r.day ?? "");
+    if (!day)
+      continue;
+    byDayMap.set(day, (byDayMap.get(day) ?? 0) + (r.amount ?? 0));
+  }
+  const byMonthMap = /* @__PURE__ */ new Map();
+  for (const [day, total] of byDayMap) {
+    const iso = day.length >= 10 && day[4] === "-" ? day : flexibleDateToIso(day);
+    const m = iso.length >= 7 && iso[4] === "-" ? iso.slice(0, 7) : iso;
+    byMonthMap.set(m, (byMonthMap.get(m) ?? 0) + total);
+  }
+  return {
+    byDay: [...byDayMap.entries()].map(([date, tong]) => ({ date, tong })).sort((a, b) => a.date.localeCompare(b.date)),
+    byMonth: [...byMonthMap.entries()].map(([thang, tong]) => ({ thang, tong })).sort((a, b) => a.thang.localeCompare(b.thang))
+  };
+}
+__name(groupByDayMonth, "groupByDayMonth");
+async function requireUser3(env, request) {
+  const user = await verifySession(env, request.headers.get("Cookie"));
+  if (!user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return null;
+}
+__name(requireUser3, "requireUser");
+function spreadsheetIdBanDao(env) {
+  const v = env.SPREADSHEET_ID_BAN_DAO?.trim();
+  return v || env.SPREADSHEET_ID_DEBT_SALES;
+}
+__name(spreadsheetIdBanDao, "spreadsheetIdBanDao");
+var DEFAULT_SPREADSHEET_ID_MAIN = "1IikVlW74zW54b6b7n1a0ko0MxIQsr_qMH6IR9XNtXpE";
+var DEFAULT_SPREADSHEET_ID_DEBT_SALES = "19ONokW6FyUFTX2RmIoGDJn8JmDeWlDsmT7AV_MN_SJM";
+var DEFAULT_SPREADSHEET_ID_CHAM_CONG3 = "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w";
+function spreadsheetIdMain(env) {
+  return env.SPREADSHEET_ID_MAIN?.trim() || DEFAULT_SPREADSHEET_ID_MAIN;
+}
+__name(spreadsheetIdMain, "spreadsheetIdMain");
+function spreadsheetIdDebt(env) {
+  return env.SPREADSHEET_ID_DEBT_SALES?.trim() || DEFAULT_SPREADSHEET_ID_DEBT_SALES;
+}
+__name(spreadsheetIdDebt, "spreadsheetIdDebt");
+function spreadsheetIdChamCong3(env) {
+  const v = env.SPREADSHEET_ID_CHAM_CONG?.trim();
+  return v || DEFAULT_SPREADSHEET_ID_CHAM_CONG3;
+}
+__name(spreadsheetIdChamCong3, "spreadsheetIdChamCong");
+function quoteSheetTitle3(title) {
+  return `'${title.replace(/'/g, "''")}'`;
+}
+__name(quoteSheetTitle3, "quoteSheetTitle");
+async function loadAttendanceSheets2(token, spreadsheetId) {
+  let titles = [];
+  try {
+    titles = filterAttendanceSheetTitles(await sheetsListTabTitles(token, spreadsheetId));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[Sheets] ${spreadsheetId} metadata: ${msg}`);
+    return [];
+  }
+  if (!titles.length)
+    return [];
+  const ranges = titles.map((t) => `${quoteSheetTitle3(t)}!A1:F400`);
+  const { data: batch } = await sheetsBatchGetMergeSafe(token, spreadsheetId, ranges);
+  return titles.map((sheetTitle) => ({
+    sheetTitle,
+    rows: batch[sheetTitle] ?? []
+  }));
+}
+__name(loadAttendanceSheets2, "loadAttendanceSheets");
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8" }
+  });
+}
+__name(jsonResponse, "jsonResponse");
+var onRequestGet5 = /* @__PURE__ */ __name(async (context) => {
+  try {
+    const { request, env } = context;
+    const deny = await requireUser3(env, request);
+    if (deny)
+      return deny;
+    if (!env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()) {
+      return jsonResponse(
+        { error: "Thi\u1EBFu GOOGLE_SERVICE_ACCOUNT_JSON (\u0111\u1EB7t Secret tr\xEAn Cloudflare Pages)." },
+        503
+      );
+    }
+    let token;
+    try {
+      token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return jsonResponse({ error: `L\u1ED7i x\xE1c th\u1EF1c Google: ${msg}` }, 502);
+    }
+    const idMain = spreadsheetIdMain(env);
+    const idDebt = spreadsheetIdDebt(env);
+    const idBanDao = spreadsheetIdBanDao(env);
+    const sheetErrors = [];
+    const batchMainResult = await sheetsBatchGetMergeSafe(token, idMain, [
+      `'${SHEETS.tong_quan}'!A1:E2`,
+      `'${SHEETS.thu_chi}'!A1:E2000`,
+      `'${SHEETS.coc}'!A1:E2000`,
+      `${quoteSheetTitle3(HH_LOAI_TRU_TAB)}!A1:E500`
+    ]);
+    sheetErrors.push(...batchMainResult.errors);
+    const batchMain = batchMainResult.data;
+    const batchDebtCnResult = await sheetsBatchGetMergeSafe(token, idDebt, [
+      `'${SHEETS.cong_no}'!A1:B2000`
+    ]);
+    sheetErrors.push(...batchDebtCnResult.errors);
+    const batchDebtCn = batchDebtCnResult.data;
+    let baoCaoTkMerged = [];
+    try {
+      const baoCaoRanges = await sheetsBatchGetValueRanges(token, idDebt, [
+        `'${SHEETS.bao_cao_tk}'!A1:A5000`,
+        `'${SHEETS.bao_cao_tk}'!B1:B5000`,
+        `'${SHEETS.bao_cao_tk}'!H1:H5000`,
+        `'${SHEETS.bao_cao_tk}'!I1:I5000`,
+        `'${SHEETS.bao_cao_tk}'!L1:L5000`
+      ]);
+      baoCaoTkMerged = mergeBaoCaoTkColumnRanges({
+        colA: baoCaoTkColValues(baoCaoRanges, "A"),
+        colB: baoCaoTkColValues(baoCaoRanges, "B"),
+        colH: baoCaoTkColValues(baoCaoRanges, "H"),
+        colI: baoCaoTkColValues(baoCaoRanges, "I"),
+        colL: baoCaoTkColValues(baoCaoRanges, "L")
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[Sheets] ${idDebt} BAO_CAO_TK columns: ${msg}`);
+    }
+    const batchBdResult = await sheetsBatchGetMergeSafe(token, idBanDao, [
+      `'${SHEETS.ban_dao}'!A1:G2000`
+    ]);
+    sheetErrors.push(...batchBdResult.errors);
+    const batchBd = batchBdResult.data;
+    const tq = (batchMain[SHEETS.tong_quan] ?? []).map(stringifySheetRow);
+    const tcBody = batchMain[SHEETS.thu_chi] ?? [];
+    const cocRaw = batchMain[SHEETS.coc] ?? [];
+    const cn = (batchDebtCn[SHEETS.cong_no] ?? []).map(stringifySheetRow);
+    const bdRaw = batchBd[SHEETS.ban_dao] ?? [];
+    const tqRow2 = tq[1] ?? [];
+    const a2 = tqRow2[0] ?? "";
+    const b2 = tqRow2[1] ?? "";
+    const c2 = tqRow2[2] ?? "";
+    const d2 = tqRow2[3] ?? "";
+    const e2 = tqRow2[4] ?? "";
+    const thuChiData = tcBody.length > 1 ? tcBody.slice(1).map(normalizeThuChiDataRow) : [];
+    const cocData = cocRaw.length > 1 ? parseRows(cocRaw.slice(1).map(normalizeCocDataRow), 5) : [];
+    const congNoData = cn.length > 1 ? parseRows(cn.slice(1), 2) : [];
+    const banDaoData = bdRaw.length > 1 ? bdRaw.slice(1).map(normalizeBanDaoDataRow) : [];
+    const sumCocB = cocData.reduce((s, r) => s + num(r[1]), 0);
+    const sumCocC = cocData.reduce((s, r) => s + num(r[2]), 0);
+    const sumCongNoB = congNoData.reduce((s, r) => s + num(r[1]), 0);
+    const duDauGoc = num(String(a2));
+    const bienDongSheetE2 = num(String(e2));
+    const byDay = /* @__PURE__ */ new Map();
+    for (const r of thuChiData) {
+      const day = flexibleDateToIso((r[0] ?? "").trim());
+      if (!day)
+        continue;
+      const cur = byDay.get(day) ?? { thu: 0, chi: 0 };
+      cur.thu += num(r[1]);
+      cur.chi += num(r[2]);
+      byDay.set(day, cur);
+    }
+    const byMonth = /* @__PURE__ */ new Map();
+    for (const [day, v] of byDay) {
+      const iso = day.length >= 10 && day[4] === "-" ? day : flexibleDateToIso(day);
+      const m = iso.length >= 7 && iso[4] === "-" ? iso.slice(0, 7) : iso;
+      const cur = byMonth.get(m) ?? { thu: 0, chi: 0 };
+      cur.thu += v.thu;
+      cur.chi += v.chi;
+      byMonth.set(m, cur);
+    }
+    const reportDays = [...byDay.entries()].map(([date, v]) => ({ date, tongThu: v.thu, tongChi: v.chi })).sort((a, b) => a.date.localeCompare(b.date));
+    const reportMonths = [...byMonth.entries()].map(([thang, v]) => ({ thang, tongThu: v.thu, tongChi: v.chi })).sort((a, b) => a.thang.localeCompare(b.thang));
+    const todayVn = todayIsoVietnam2();
+    const todayThuChi = byDay.get(todayVn) ?? { thu: 0, chi: 0 };
+    let tongBanDaoGHomNay = 0;
+    for (const r of banDaoData) {
+      const day = flexibleDateToIso((r[0] ?? "").trim());
+      if (day === todayVn)
+        tongBanDaoGHomNay += num(r[6]);
+    }
+    const banDaoTotals = groupByDayMonth(
+      banDaoData.map((r) => ({ day: r[0] ?? "", amount: num(r[6]) }))
+    );
+    const { headerRow: baoCaoTkHeader, bodyRows: baoCaoTkBody } = findBaoCaoTkDataStart(baoCaoTkMerged);
+    const baoCaoTkEntries = parseBaoCaoTkSheetRows(baoCaoTkBody, baoCaoTkHeader);
+    const reportChiTieu = buildChiTieuReport(baoCaoTkEntries, todayVn);
+    const thuChiModels = thuChiData.map((r) => ({
+      ngay: r[0] ?? "",
+      thu: r[1] ?? "",
+      chi: r[2] ?? "",
+      ghiChu: r[3] ?? ""
+    }));
+    const hhLoaiTruRaw = batchMain[HH_LOAI_TRU_TAB] ?? [];
+    let hhLoaiTruFormatted = [];
+    try {
+      const hhFmt = await sheetsBatchGetMergeSafe(
+        token,
+        idMain,
+        [`${quoteSheetTitle3(HH_LOAI_TRU_TAB)}!A1:E500`],
+        "FORMATTED_VALUE"
+      );
+      sheetErrors.push(...hhFmt.errors);
+      hhLoaiTruFormatted = hhFmt.data[HH_LOAI_TRU_TAB] ?? [];
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[Sheets] ${idMain} HH_LOAI_TRU formatted: ${msg}`);
+    }
+    const hhLoaiTru = parseHhLoaiTruSheetRows(hhLoaiTruRaw, hhLoaiTruFormatted);
+    let luongNvConfig = buildLuongNvConfig(0, CHAM_CONG_TEMPLATE_TAB);
+    try {
+      const idChamCong = spreadsheetIdChamCong3(env);
+      let tyGia = 0;
+      let sourceTab = CHAM_CONG_TEMPLATE_TAB;
+      const tyGiaTabs = [CHAM_CONG_TEMPLATE_TAB, "SU_BEO"];
+      for (const tab of tyGiaTabs) {
+        const v = await readTyGiaF2(token, idChamCong, tab);
+        if (v > 0) {
+          tyGia = v;
+          sourceTab = tab;
+          break;
+        }
+      }
+      if (tyGia <= 0) {
+        const titles = await sheetsListTabTitles(token, idChamCong);
+        for (const t of listChamCongEmployeeTabs(titles)) {
+          const v = await readTyGiaF2(token, idChamCong, t);
+          if (v > 0) {
+            tyGia = v;
+            sourceTab = t;
+            break;
+          }
+        }
+      }
+      luongNvConfig = buildLuongNvConfig(tyGia, sourceTab);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[Sheets] ty gia F2: ${msg}`);
+    }
+    let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
+    try {
+      const idChamCong = spreadsheetIdChamCong3(env);
+      await ensureTodayDateRowsAllTabs(token, idChamCong);
+      let attendanceSheets = await loadAttendanceSheets2(token, idChamCong);
+      attendanceSheets = await syncAdvanceCarryToFirstDayAllTabs(
+        token,
+        idChamCong,
+        attendanceSheets,
+        thuChiModels,
+        todayVn,
+        hhLoaiTru,
+        luongNvConfig,
+        () => loadAttendanceSheets2(token, idChamCong)
+      );
+      reportLuongNv = buildLuongNvReport(
+        attendanceSheets,
+        thuChiModels,
+        todayVn,
+        hhLoaiTru,
+        luongNvConfig
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[Sheets] cham cong: ${msg}`);
+      sheetErrors.push({
+        spreadsheetId: spreadsheetIdChamCong3(env),
+        range: "cham-cong",
+        message: msg
+      });
+    }
+    return jsonResponse({
+      tongQuan: { a2, b2, c2, d2, e2 },
+      docTongQuan: {
+        sheet: SHEETS.tong_quan,
+        a2_soDuDau: {
+          raw: a2 === void 0 || a2 === null ? "" : String(a2),
+          so: duDauGoc
+        }
+      },
+      thuChi: thuChiData.map((r) => ({
+        ngay: r[0],
+        thu: r[1],
+        chi: r[2],
+        ghiChu: r[3]
+      })),
+      coc: cocData.map((r) => ({
+        ngay: r[0],
+        thu: r[1],
+        chi: r[2],
+        ten: r[3],
+        ghiChu: r[4]
+      })),
+      congNo: congNoData.map((r) => ({ ten: r[0], tienNo: r[1] })),
+      banDao: banDaoData.map((r) => ({
+        ngay: r[0],
+        ten: r[1],
+        diaChi: r[2],
+        sdt: r[3],
+        soLuong: r[4],
+        gia: r[5],
+        thanhTien: r[6]
+      })),
+      computed: {
+        tongCoc: sumCocC,
+        nhanCoc: sumCocB,
+        tongCongNo: sumCongNoB,
+        duDauNhap: duDauGoc,
+        bienDongE2: bienDongSheetE2
+      },
+      report: {
+        byDay: reportDays,
+        byMonth: reportMonths,
+        todayVietnam: {
+          date: todayVn,
+          tongThu: todayThuChi.thu,
+          tongChi: todayThuChi.chi
+        }
+      },
+      reportBanDao: {
+        ...banDaoTotals,
+        todayVietnam: { date: todayVn, tong: tongBanDaoGHomNay }
+      },
+      baoCaoTk: baoCaoTkEntries.map((e) => ({
+        ngay: e.ngay,
+        mcc: e.mcc,
+        taiKhoan: e.taiKhoan,
+        tenKhach: e.tenKhach,
+        tongTieu: e.tongTieu,
+        tongThu: e.tongThu,
+        nguon: e.nguon
+      })),
+      reportChiTieu,
+      reportLuongNv,
+      hhLoaiTru,
+      sheetDiagnostics: {
+        spreadsheetIds: {
+          main: idMain,
+          debt: idDebt,
+          banDao: idBanDao,
+          chamCong: spreadsheetIdChamCong3(env)
+        },
+        errors: sheetErrors,
+        counts: {
+          thuChi: thuChiData.length,
+          coc: cocData.length,
+          congNo: congNoData.length,
+          banDao: banDaoData.length,
+          hhLoaiTru: hhLoaiTru.length,
+          luongNvEmployees: reportLuongNv.periods?.[0]?.employees?.length ?? 0
+        }
+      }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/sheet]", msg);
+    try {
+      return jsonResponse({ error: msg }, 500);
+    } catch {
+      return new Response('{"error":"L\u1ED7i server"}', {
+        status: 500,
+        headers: { "Content-Type": "application/json; charset=utf-8" }
+      });
+    }
+  }
+}, "onRequestGet");
+var onRequestPost5 = /* @__PURE__ */ __name(async (context) => {
+  const deny = await requireUser3(context.env, context.request);
+  if (deny)
+    return deny;
+  return Response.json(
+    {
+      error: "Ghi Sheet t\u1EEB web \u0111\xE3 t\u1EAFt. Ch\u1EC9nh tr\xEAn Google Sheet ho\u1EB7c bot Telegram (Thu chi / C\u1ECDc / C\xF4ng n\u1EE3)."
+    },
+    { status: 405 }
+  );
+}, "onRequestPost");
+
+// api/telegram-webhook.ts
+var SHEET_TQ = "TONG_QUAN";
+var SHEET_TC = "THU_CHI";
+var SHEET_COC = "COC";
+var SHEET_CN = "CONG_NO";
+var SHEET_BAN_DAO = "BAN_DAO";
+var SHEET_BAO_CAO_TK = "BAO_CAO_TK";
+var CHAT_THU_CHI_DEFAULT = "-1003727898214";
+var CHAT_BAN_DAO_DEFAULT = "-5091396609";
+var CHAT_BAO_CAO_DEFAULT = "-1003992397667";
+function thuChiChatId(env) {
+  const v = env.TELEGRAM_THU_CHI_CHAT_ID;
+  return v && String(v).trim() || CHAT_THU_CHI_DEFAULT;
+}
+__name(thuChiChatId, "thuChiChatId");
+function banDaoChatId(env) {
+  const v = env.TELEGRAM_BAN_DAO_CHAT_ID;
+  return v && String(v).trim() || CHAT_BAN_DAO_DEFAULT;
+}
+__name(banDaoChatId, "banDaoChatId");
+function baoCaoChatId(env) {
+  const v = env.TELEGRAM_BAO_CAO_CHAT_ID;
+  return v && String(v).trim() || CHAT_BAO_CAO_DEFAULT;
+}
+__name(baoCaoChatId, "baoCaoChatId");
+function spreadsheetIdBanDao2(env) {
+  const v = env.SPREADSHEET_ID_BAN_DAO?.trim();
+  return v || env.SPREADSHEET_ID_DEBT_SALES;
+}
+__name(spreadsheetIdBanDao2, "spreadsheetIdBanDao");
+function parseThuChiMessage(text) {
+  const t = text.trim();
+  const head = t.match(/^(THU|CHI)\s*:\s*(.+)$/i);
+  if (!head)
+    return null;
+  const kind = head[1].toUpperCase() === "THU" ? "THU" : "CHI";
+  const rest = head[2].trim();
+  const idx = rest.search(/\s-\s/);
+  if (idx === -1)
+    return null;
+  const amountStr = rest.slice(0, idx).trim();
+  const note = rest.slice(idx + 3).trim();
+  if (!amountStr || !note)
+    return null;
+  if (!/\d/.test(amountStr.replace(/\s/g, "")))
+    return null;
+  if (!Number.isFinite(num(amountStr)))
+    return null;
+  return { kind, amountStr, note };
+}
+__name(parseThuChiMessage, "parseThuChiMessage");
+function parseCocDashLine(line) {
+  const m = line.match(/^CỌC\s*-\s*(THU|CHI)\s*-\s*([\d\s.,]+)\s*-\s*(.+?)\s*-\s*(.+)$/i);
+  if (!m)
+    return null;
+  const kind = m[1].toUpperCase() === "THU" ? "THU" : "CHI";
+  const amountStr = m[2].trim();
+  const ten = m[3].trim();
+  const note = m[4].trim();
+  if (!amountStr || !ten || !note || !Number.isFinite(num(amountStr)))
+    return null;
+  return { kind, amountStr, ten, note };
+}
+__name(parseCocDashLine, "parseCocDashLine");
+function parseCocMessage(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0)
+    return null;
+  const dashParsed = lines.map(parseCocDashLine);
+  if (dashParsed.every((x) => x != null)) {
+    return { lines: dashParsed };
+  }
+  const pushThuChiLine = /* @__PURE__ */ __name((line, out2) => {
+    const m = line.match(/^(THU|CHI)\s*-\s*([\d\s.,]+)\s*-\s*(.+)$/i);
+    if (!m)
+      return;
+    const kind = m[1].toUpperCase() === "THU" ? "THU" : "CHI";
+    const amountStr = m[2].trim();
+    const note = m[3].trim();
+    if (!amountStr || !note || !Number.isFinite(num(amountStr)))
+      return;
+    out2.push({ kind, amountStr, ten: "", note });
+  }, "pushThuChiLine");
+  if (lines.length === 1) {
+    const m = lines[0].match(/^CỌC\s*:\s*(THU|CHI)\s*-\s*([\d\s.,]+)\s*-\s*(.+)$/i);
+    if (!m)
+      return null;
+    const kind = m[1].toUpperCase() === "THU" ? "THU" : "CHI";
+    const amountStr = m[2].trim();
+    const note = m[3].trim();
+    if (!amountStr || !note || !Number.isFinite(num(amountStr)))
+      return null;
+    return { lines: [{ kind, amountStr, ten: "", note }] };
+  }
+  if (!/^CỌC\s*:/i.test(lines[0]))
+    return null;
+  const out = [];
+  const afterCoc = lines[0].replace(/^CỌC\s*:/i, "").trim();
+  if (afterCoc)
+    pushThuChiLine(afterCoc, out);
+  for (let i = 1; i < lines.length; i++) {
+    pushThuChiLine(lines[i], out);
+  }
+  return out.length ? { lines: out } : null;
+}
+__name(parseCocMessage, "parseCocMessage");
+function parseCongNoMessage(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2)
+    return null;
+  if (!/^CÔNG\s*NỢ\s*:/i.test(lines[0]))
+    return null;
+  const pairs = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const idx = line.lastIndexOf("-");
+    if (idx <= 0)
+      continue;
+    const name = line.slice(0, idx).trim();
+    const amountStr = line.slice(idx + 1).trim();
+    if (!name || !amountStr || !Number.isFinite(num(amountStr)))
+      continue;
+    pairs.push({ name, amountStr });
+  }
+  return pairs.length ? { pairs } : null;
+}
+__name(parseCongNoMessage, "parseCongNoMessage");
+function parseBanDaoMessage(text) {
+  const out = { ten: "", diaChi: "", sdt: "", soLuong: "", gia: "", thanhTien: "" };
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    let m = line.match(/^\s*TÊN\s*:\s*(.+)$/i);
+    if (m) {
+      out.ten = m[1].trim();
+      continue;
+    }
+    m = line.match(/^\s*ĐỊA\s*CHỈ\s*:\s*(.+)$/i);
+    if (m) {
+      out.diaChi = m[1].trim();
+      continue;
+    }
+    m = line.match(/^\s*SỐ\s*ĐIỆN\s*THOẠI\s*:\s*(.+)$/i);
+    if (m) {
+      out.sdt = m[1].trim();
+      continue;
+    }
+    m = line.match(/^\s*SỐ\s*LƯỢNG\s*:\s*(.+)$/i);
+    if (m) {
+      out.soLuong = m[1].trim();
+      continue;
+    }
+    m = line.match(/^\s*GIÁ\s*:\s*(.+)$/i);
+    if (m) {
+      out.gia = m[1].trim();
+      continue;
+    }
+    m = line.match(/^\s*THÀNH\s*TIỀN\s*:\s*(.+)$/i);
+    if (m) {
+      out.thanhTien = m[1].trim();
+      continue;
+    }
+  }
+  const has = `${out.ten}${out.diaChi}${out.sdt}${out.soLuong}${out.gia}${out.thanhTien}`.trim();
+  return has ? out : null;
+}
+__name(parseBanDaoMessage, "parseBanDaoMessage");
+function parseBaoCaoMessage(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  let mcc = "";
+  const tk = [];
+  const tenPairs = [];
+  let phase = "none";
+  for (const line of lines) {
+    if (!line)
+      continue;
+    if (/^MCC\s*:/i.test(line)) {
+      phase = "mcc";
+      mcc = line.replace(/^MCC\s*:\s*/i, "").trim();
+      continue;
+    }
+    if (/^TÀI\s*KHOẢN\s*:/i.test(line) || /^TAI\s*KHOAN\s*:/i.test(line)) {
+      phase = "tk";
+      const r = line.replace(/^TÀI\s*KHOẢN\s*:\s*/i, "").replace(/^TAI\s*KHOAN\s*:\s*/i, "").trim();
+      if (r)
+        tk.push(r);
+      continue;
+    }
+    if (/^TÊN\s*:/i.test(line)) {
+      phase = "ten";
+      const r = line.replace(/^TÊN\s*:\s*/i, "").trim();
+      if (r) {
+        for (const part of r.split(/[,;]/)) {
+          const p = part.trim();
+          const m = p.match(/^(.+?)\s*-\s*([\d\s.,]+)\s*$/);
+          if (m)
+            tenPairs.push({ d: m[1].trim(), e: m[2].trim() });
+        }
+      }
+      continue;
+    }
+    if (phase === "tk")
+      tk.push(line);
+    else if (phase === "ten") {
+      const m = line.match(/^(.+?)\s*-\s*([\d\s.,]+)\s*$/);
+      if (m)
+        tenPairs.push({ d: m[1].trim(), e: m[2].trim() });
+    }
+  }
+  if (!mcc && tk.length === 0 && tenPairs.length === 0)
+    return null;
+  return { mcc, taiKhoan: tk, tenPairs };
+}
+__name(parseBaoCaoMessage, "parseBaoCaoMessage");
+function buildBaoCaoTkNewRowsOnly(mcc, taiKhoan, tenPairs, ngay) {
+  const n = Math.max(taiKhoan.length, tenPairs.length, 1);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    rows.push([
+      isoToSheetDateInput(ngay),
+      mcc,
+      taiKhoan[i] ?? "",
+      tenPairs[i]?.d ?? "",
+      rateNumericOrEmpty(tenPairs[i]?.e ?? "")
+    ]);
+  }
+  return rows;
+}
+__name(buildBaoCaoTkNewRowsOnly, "buildBaoCaoTkNewRowsOnly");
+function formatNgayFromTelegram(unixSec) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(unixSec * 1e3));
+}
+__name(formatNgayFromTelegram, "formatNgayFromTelegram");
+async function telegramSendMessage2(botToken, chatId, text) {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text })
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("telegram sendMessage", res.status, err);
+  }
+}
+__name(telegramSendMessage2, "telegramSendMessage");
+async function telegramCopyMessage(botToken, toChatId, fromChatId, messageId) {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/copyMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: toChatId,
+      from_chat_id: fromChatId,
+      message_id: messageId
+    })
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("telegram copyMessage", res.status, err);
+    return false;
+  }
+  return true;
+}
+__name(telegramCopyMessage, "telegramCopyMessage");
+function replyHasForwardableImage(reply) {
+  if (!reply)
+    return false;
+  if (reply.photo?.length)
+    return true;
+  const mime = reply.document?.mime_type ?? "";
+  return mime.startsWith("image/");
+}
+__name(replyHasForwardableImage, "replyHasForwardableImage");
+async function writeThuChiEntryToSheet(env, unix, thuChiOne) {
+  const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const idMain = env.SPREADSHEET_ID_MAIN;
+  const batchTq = await sheetsBatchGet(token, idMain, [`'${SHEET_TQ}'!A1:E2`]);
+  const batchCoc = await sheetsBatchGetMergeSafe(token, idMain, [`'${SHEET_COC}'!A1:E2000`]);
+  const cocRaw = batchCoc.data[SHEET_COC] ?? [];
+  const tq = (batchTq[SHEET_TQ] ?? []).map(stringifySheetRow);
+  const a2Raw = (tq[1] ?? [])[0] ?? "0";
+  const a2Num = num(String(a2Raw));
+  const cocData = cocRaw.length > 1 ? cocRaw.slice(1).map(normalizeCocDataRow) : [];
+  const sumFromCoc = /* @__PURE__ */ __name((rows) => rows.reduce(
+    (s, r) => ({ b2Chi: s.b2Chi + num(r[2]), c2Thu: s.c2Thu + num(r[1]) }),
+    { b2Chi: 0, c2Thu: 0 }
+  ), "sumFromCoc");
+  const cocRowsForSum = cocData.map((r) => [
+    String(r[0] ?? ""),
+    String(r[1] ?? ""),
+    String(r[2] ?? ""),
+    String(r[3] ?? ""),
+    String(r[4] ?? "")
+  ]);
+  const sumCoc = sumFromCoc(cocRowsForSum);
+  const tqRow2 = [[a2Num, sumCoc.b2Chi, sumCoc.c2Thu]];
+  const ngay = formatNgayFromTelegram(unix);
+  const amount = String(num(thuChiOne.amountStr));
+  const thu = thuChiOne.kind === "THU" ? amount : "";
+  const chi = thuChiOne.kind === "CHI" ? amount : "";
+  const appendRow = buildThuChiAppendRow({ ngay, thu, chi, ghiChu: thuChiOne.note });
+  await sheetsValuesAppend(token, idMain, `'${SHEET_TC}'!A:D`, [appendRow], "USER_ENTERED");
+  await sheetsBatchUpdate(token, idMain, [{ range: `'${SHEET_TQ}'!A2:C2`, values: tqRow2 }]);
+}
+__name(writeThuChiEntryToSheet, "writeThuChiEntryToSheet");
+var onRequestGet6 = /* @__PURE__ */ __name(async () => {
+  return new Response("Telegram webhook (POST)", {
+    headers: { "Content-Type": "text/plain; charset=utf-8" }
+  });
+}, "onRequestGet");
+var onRequestPost6 = /* @__PURE__ */ __name(async (context) => {
+  const { request, env } = context;
+  const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!botToken) {
+    return Response.json({ ok: false, error: "TELEGRAM_BOT_TOKEN ch\u01B0a c\u1EA5u h\xECnh" });
+  }
+  const secret = env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  if (secret) {
+    const got = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+    if (got !== secret) {
+      return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+  }
+  let update;
+  try {
+    update = await request.json();
+  } catch {
+    return Response.json({ ok: false }, { status: 400 });
+  }
+  const msg = update.message;
+  const chatId = msg?.chat?.id;
+  const text = msg?.text?.trim();
+  const unix = msg?.date;
+  if (chatId == null || !text || unix == null) {
+    return Response.json({ ok: true, ignored: true });
+  }
+  const sid = String(chatId);
+  const thuChiDest = thuChiChatId(env);
+  const thuChiParsed = parseThuChiMessage(text);
+  const replyTo = msg?.reply_to_message;
+  if (thuChiParsed && sid !== thuChiDest) {
+    const destId = Number(thuChiDest);
+    try {
+      if (replyHasForwardableImage(replyTo) && replyTo?.message_id != null) {
+        const copied = await telegramCopyMessage(botToken, destId, chatId, replyTo.message_id);
+        if (!copied) {
+          await telegramSendMessage2(
+            botToken,
+            chatId,
+            "Kh\xF4ng chuy\u1EC3n \u0111\u01B0\u1EE3c \u1EA3nh sang nh\xF3m Thu chi. Ki\u1EC3m tra bot c\xF3 trong nh\xF3m \u0111\xEDch v\xE0 quy\u1EC1n g\u1EEDi tin."
+          );
+          return Response.json({ ok: false, error: "copyMessage failed" }, { status: 500 });
+        }
+      }
+      await telegramSendMessage2(botToken, destId, text);
+      await writeThuChiEntryToSheet(env, unix, thuChiParsed);
+      await telegramSendMessage2(botToken, chatId, "\u0110\xE3 nh\u1EADn th\xF4ng tin");
+      return Response.json({ ok: true, kind: "thu_chi_forward" });
+    } catch (e) {
+      const msgErr = e instanceof Error ? e.message : String(e);
+      console.error("telegram thu_chi_forward", msgErr);
+      await telegramSendMessage2(botToken, chatId, `L\u1ED7i ghi Sheet: ${msgErr}`);
+      return Response.json({ ok: false, error: msgErr }, { status: 500 });
+    }
+  }
+  if (sid === banDaoChatId(env)) {
+    const fields = parseBanDaoMessage(text);
+    if (!fields) {
+      await telegramSendMessage2(
+        botToken,
+        chatId,
+        "G\u1EEDi \u0111\u01A1n theo t\u1EEBng d\xF2ng:\nT\xCAN: \u2026\n\u0110\u1ECAA CH\u1EC8: \u2026\nS\u1ED0 \u0110I\u1EC6N THO\u1EA0I: \u2026\nS\u1ED0 L\u01AF\u1EE2NG: \u2026\nGI\xC1: \u2026\nTH\xC0NH TI\u1EC0N: \u2026"
+      );
+      return Response.json({ ok: true, ignored: true });
+    }
+    try {
+      const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const idBd = spreadsheetIdBanDao2(env);
+      const ngay = formatNgayFromTelegram(unix);
+      const newRow = buildBanDaoAppendRow(ngay, fields);
+      await sheetsValuesAppend(token, idBd, `'${SHEET_BAN_DAO}'!A:G`, [newRow], "USER_ENTERED");
+      await telegramSendMessage2(botToken, chatId, "\u0110\xE3 th\xEAm 1 d\xF2ng v\xE0o BAN_DAO (append \u2014 kh\xF4ng ghi \u0111\xE8 \u0111\u1ECBnh d\u1EA1ng c\u0169).");
+      return Response.json({ ok: true, kind: "ban_dao" });
+    } catch (e) {
+      const msgErr = e instanceof Error ? e.message : String(e);
+      console.error("telegram ban_dao", msgErr);
+      await telegramSendMessage2(botToken, chatId, `L\u1ED7i ghi BAN_DAO: ${msgErr}`);
+      return Response.json({ ok: false, error: msgErr }, { status: 500 });
+    }
+  }
+  if (sid === baoCaoChatId(env)) {
+    const parsed = parseBaoCaoMessage(text);
+    if (!parsed) {
+      await telegramSendMessage2(
+        botToken,
+        chatId,
+        "G\u1EEDi theo kh\u1ED1i:\nMCC: \u2026\nT\xC0I KHO\u1EA2N:\n(id d\xF2ng 1)\n(id d\xF2ng 2)\nT\xCAN:\nTP - 57\nAKR - 57"
+      );
+      return Response.json({ ok: true, ignored: true });
+    }
+    try {
+      const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const ngay = formatNgayFromTelegram(unix);
+      const addedRows = Math.max(parsed.taiKhoan.length, parsed.tenPairs.length, 1);
+      const newRows = buildBaoCaoTkNewRowsOnly(parsed.mcc, parsed.taiKhoan, parsed.tenPairs, ngay);
+      await sheetsValuesAppend(
+        token,
+        env.SPREADSHEET_ID_DEBT_SALES,
+        `'${SHEET_BAO_CAO_TK}'!A:E`,
+        newRows,
+        "USER_ENTERED"
+      );
+      await telegramSendMessage2(
+        botToken,
+        chatId,
+        `\u0110\xE3 th\xEAm ${addedRows} d\xF2ng v\xE0o BAO_CAO_TK (append \u2014 kh\xF4ng ghi \u0111\xE8 \u0111\u1ECBnh d\u1EA1ng % / ng\xE0y).`
+      );
+      return Response.json({ ok: true, kind: "bao_cao" });
+    } catch (e) {
+      const msgErr = e instanceof Error ? e.message : String(e);
+      console.error("telegram bao_cao", msgErr);
+      await telegramSendMessage2(botToken, chatId, `L\u1ED7i ghi BAO_CAO_TK: ${msgErr}`);
+      return Response.json({ ok: false, error: msgErr }, { status: 500 });
+    }
+  }
+  if (sid !== thuChiChatId(env)) {
+    return Response.json({ ok: true, ignored: true });
+  }
+  const congNoBlock = parseCongNoMessage(text);
+  const cocBlock = parseCocMessage(text);
+  const thuChiOne = parseThuChiMessage(text);
+  if (!congNoBlock && !cocBlock && !thuChiOne) {
+    return Response.json({ ok: true, ignored: true });
+  }
+  try {
+    const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const idMain = env.SPREADSHEET_ID_MAIN;
+    const batchTq = await sheetsBatchGet(token, idMain, [`'${SHEET_TQ}'!A1:E2`]);
+    const batchMainTabs = await sheetsBatchGetMergeSafe(token, idMain, [`'${SHEET_COC}'!A1:E2000`]);
+    const cocRaw = batchMainTabs.data[SHEET_COC] ?? [];
+    const tq = (batchTq[SHEET_TQ] ?? []).map(stringifySheetRow);
+    const a2Raw = (tq[1] ?? [])[0] ?? "0";
+    const a2Num = num(String(a2Raw));
+    const cocData = cocRaw.length > 1 ? cocRaw.slice(1).map(normalizeCocDataRow) : [];
+    const sumFromCoc = /* @__PURE__ */ __name((rows) => rows.reduce(
+      (s, r) => ({ b2Chi: s.b2Chi + num(r[2]), c2Thu: s.c2Thu + num(r[1]) }),
+      { b2Chi: 0, c2Thu: 0 }
+    ), "sumFromCoc");
+    const tqUpdateRow2ABC = /* @__PURE__ */ __name((cocBodyRows) => {
+      const sumCoc = sumFromCoc(cocBodyRows);
+      return [[a2Num, sumCoc.b2Chi, sumCoc.c2Thu]];
+    }, "tqUpdateRow2ABC");
+    if (congNoBlock) {
+      const cocRowsForSum = cocData.map((r) => [
+        String(r[0] ?? ""),
+        String(r[1] ?? ""),
+        String(r[2] ?? ""),
+        String(r[3] ?? ""),
+        String(r[4] ?? "")
+      ]);
+      const tqRow2 = tqUpdateRow2ABC(cocRowsForSum);
+      await sheetsValuesAppend(
+        token,
+        env.SPREADSHEET_ID_DEBT_SALES,
+        `'${SHEET_CN}'!A:B`,
+        buildCongNoAppendRows(congNoBlock.pairs),
+        "USER_ENTERED"
+      );
+      await sheetsBatchUpdate(token, idMain, [{ range: `'${SHEET_TQ}'!A2:C2`, values: tqRow2 }]);
+      await telegramSendMessage2(
+        botToken,
+        chatId,
+        `\u0110\xE3 n\u1ED1i ${congNoBlock.pairs.length} d\xF2ng v\xE0o CONG_NO (file theo d\xF5i t\xE0i kho\u1EA3n).`
+      );
+      return Response.json({ ok: true, kind: "cong_no" });
+    }
+    if (cocBlock) {
+      const ngayOnly = formatNgayFromTelegram(unix);
+      const newCocRows = cocBlock.lines.map((line) => ({
+        ngay: ngayOnly,
+        thu: line.kind === "THU" ? String(num(line.amountStr)) : "",
+        chi: line.kind === "CHI" ? String(num(line.amountStr)) : "",
+        ten: line.ten,
+        note: line.note
+      }));
+      await sheetsValuesAppend(
+        token,
+        idMain,
+        `'${SHEET_COC}'!A:E`,
+        buildCocAppendRows(newCocRows),
+        "USER_ENTERED"
+      );
+      const cocRowsForSum = [
+        ...cocData.map((r) => [
+          String(r[0] ?? ""),
+          String(r[1] ?? ""),
+          String(r[2] ?? ""),
+          String(r[3] ?? ""),
+          String(r[4] ?? "")
+        ]),
+        ...newCocRows.map((r) => [r.ngay, r.thu, r.chi, r.ten, r.note])
+      ];
+      const tqRow2 = tqUpdateRow2ABC(cocRowsForSum);
+      await sheetsBatchUpdate(token, idMain, [{ range: `'${SHEET_TQ}'!A2:C2`, values: tqRow2 }]);
+      await telegramSendMessage2(
+        botToken,
+        chatId,
+        `\u0110\xE3 ghi C\u1ECCC (${cocBlock.lines.length} d\xF2ng) \u2014 n\u1ED1i cu\u1ED1i tab COC (MAIN), ng\xE0y GMT+7.`
+      );
+      return Response.json({ ok: true, kind: "coc" });
+    }
+    if (thuChiOne) {
+      await writeThuChiEntryToSheet(env, unix, thuChiOne);
+      const ngay = formatNgayFromTelegram(unix);
+      const amount = String(num(thuChiOne.amountStr));
+      const label = thuChiOne.kind === "THU" ? "Thu" : "Chi";
+      await telegramSendMessage2(
+        botToken,
+        chatId,
+        `\u0110\xE3 ghi ${label} ${amount} \u2014 ${thuChiOne.note} (ng\xE0y ${ngay}); n\u1ED1i cu\u1ED1i THU_CHI.`
+      );
+      return Response.json({ ok: true, kind: "thu_chi" });
+    }
+    return Response.json({ ok: true, ignored: true });
+  } catch (e) {
+    const msgErr = e instanceof Error ? e.message : String(e);
+    console.error("telegram-webhook sheet error", msgErr);
+    await telegramSendMessage2(botToken, chatId, `L\u1ED7i ghi Sheet: ${msgErr}`);
+    return Response.json({ ok: false, error: msgErr }, { status: 500 });
+  }
+}, "onRequestPost");
+
+// ../.wrangler/tmp/pages-Wyzmi3/functionsRoutes-0.3900423974361139.mjs
+var routes = [
+  {
+    routePath: "/api/cham-cong-employees",
+    mountPath: "/api",
+    method: "DELETE",
+    middlewares: [],
+    modules: [onRequestDelete]
+  },
+  {
+    routePath: "/api/cham-cong-employees",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet]
+  },
+  {
+    routePath: "/api/cham-cong-employees",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost]
+  },
+  {
+    routePath: "/api/health",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet2]
+  },
+  {
+    routePath: "/api/login",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost2]
+  },
+  {
+    routePath: "/api/logout",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost3]
+  },
+  {
+    routePath: "/api/luong-nv-cron",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet3]
+  },
+  {
+    routePath: "/api/luong-nv-exclusions",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet4]
+  },
+  {
+    routePath: "/api/luong-nv-exclusions",
+    mountPath: "/api",
+    method: "PUT",
+    middlewares: [],
+    modules: [onRequestPut]
+  },
+  {
+    routePath: "/api/reveal-balance",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost4]
+  },
+  {
+    routePath: "/api/sheet",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet5]
+  },
+  {
+    routePath: "/api/sheet",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost5]
+  },
+  {
+    routePath: "/api/telegram-webhook",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet6]
+  },
+  {
+    routePath: "/api/telegram-webhook",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost6]
+  }
+];
+
+// ../node_modules/path-to-regexp/dist.es2015/index.js
+function lexer(str) {
+  var tokens = [];
+  var i = 0;
+  while (i < str.length) {
+    var char = str[i];
+    if (char === "*" || char === "+" || char === "?") {
+      tokens.push({ type: "MODIFIER", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "\\") {
+      tokens.push({ type: "ESCAPED_CHAR", index: i++, value: str[i++] });
+      continue;
+    }
+    if (char === "{") {
+      tokens.push({ type: "OPEN", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "}") {
+      tokens.push({ type: "CLOSE", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === ":") {
+      var name = "";
+      var j = i + 1;
+      while (j < str.length) {
+        var code = str.charCodeAt(j);
+        if (
+          // `0-9`
+          code >= 48 && code <= 57 || // `A-Z`
+          code >= 65 && code <= 90 || // `a-z`
+          code >= 97 && code <= 122 || // `_`
+          code === 95
+        ) {
+          name += str[j++];
+          continue;
+        }
+        break;
+      }
+      if (!name)
+        throw new TypeError("Missing parameter name at ".concat(i));
+      tokens.push({ type: "NAME", index: i, value: name });
+      i = j;
+      continue;
+    }
+    if (char === "(") {
+      var count = 1;
+      var pattern = "";
+      var j = i + 1;
+      if (str[j] === "?") {
+        throw new TypeError('Pattern cannot start with "?" at '.concat(j));
+      }
+      while (j < str.length) {
+        if (str[j] === "\\") {
+          pattern += str[j++] + str[j++];
+          continue;
+        }
+        if (str[j] === ")") {
+          count--;
+          if (count === 0) {
+            j++;
+            break;
+          }
+        } else if (str[j] === "(") {
+          count++;
+          if (str[j + 1] !== "?") {
+            throw new TypeError("Capturing groups are not allowed at ".concat(j));
+          }
+        }
+        pattern += str[j++];
+      }
+      if (count)
+        throw new TypeError("Unbalanced pattern at ".concat(i));
+      if (!pattern)
+        throw new TypeError("Missing pattern at ".concat(i));
+      tokens.push({ type: "PATTERN", index: i, value: pattern });
+      i = j;
+      continue;
+    }
+    tokens.push({ type: "CHAR", index: i, value: str[i++] });
+  }
+  tokens.push({ type: "END", index: i, value: "" });
+  return tokens;
+}
+__name(lexer, "lexer");
+function parse(str, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var tokens = lexer(str);
+  var _a = options.prefixes, prefixes = _a === void 0 ? "./" : _a, _b = options.delimiter, delimiter = _b === void 0 ? "/#?" : _b;
+  var result = [];
+  var key = 0;
+  var i = 0;
+  var path = "";
+  var tryConsume = /* @__PURE__ */ __name(function(type) {
+    if (i < tokens.length && tokens[i].type === type)
+      return tokens[i++].value;
+  }, "tryConsume");
+  var mustConsume = /* @__PURE__ */ __name(function(type) {
+    var value2 = tryConsume(type);
+    if (value2 !== void 0)
+      return value2;
+    var _a2 = tokens[i], nextType = _a2.type, index = _a2.index;
+    throw new TypeError("Unexpected ".concat(nextType, " at ").concat(index, ", expected ").concat(type));
+  }, "mustConsume");
+  var consumeText = /* @__PURE__ */ __name(function() {
+    var result2 = "";
+    var value2;
+    while (value2 = tryConsume("CHAR") || tryConsume("ESCAPED_CHAR")) {
+      result2 += value2;
+    }
+    return result2;
+  }, "consumeText");
+  var isSafe = /* @__PURE__ */ __name(function(value2) {
+    for (var _i = 0, delimiter_1 = delimiter; _i < delimiter_1.length; _i++) {
+      var char2 = delimiter_1[_i];
+      if (value2.indexOf(char2) > -1)
+        return true;
+    }
+    return false;
+  }, "isSafe");
+  var safePattern = /* @__PURE__ */ __name(function(prefix2) {
+    var prev = result[result.length - 1];
+    var prevText = prefix2 || (prev && typeof prev === "string" ? prev : "");
+    if (prev && !prevText) {
+      throw new TypeError('Must have text between two parameters, missing text after "'.concat(prev.name, '"'));
+    }
+    if (!prevText || isSafe(prevText))
+      return "[^".concat(escapeString(delimiter), "]+?");
+    return "(?:(?!".concat(escapeString(prevText), ")[^").concat(escapeString(delimiter), "])+?");
+  }, "safePattern");
+  while (i < tokens.length) {
+    var char = tryConsume("CHAR");
+    var name = tryConsume("NAME");
+    var pattern = tryConsume("PATTERN");
+    if (name || pattern) {
+      var prefix = char || "";
+      if (prefixes.indexOf(prefix) === -1) {
+        path += prefix;
+        prefix = "";
+      }
+      if (path) {
+        result.push(path);
+        path = "";
+      }
+      result.push({
+        name: name || key++,
+        prefix,
+        suffix: "",
+        pattern: pattern || safePattern(prefix),
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    var value = char || tryConsume("ESCAPED_CHAR");
+    if (value) {
+      path += value;
+      continue;
+    }
+    if (path) {
+      result.push(path);
+      path = "";
+    }
+    var open = tryConsume("OPEN");
+    if (open) {
+      var prefix = consumeText();
+      var name_1 = tryConsume("NAME") || "";
+      var pattern_1 = tryConsume("PATTERN") || "";
+      var suffix = consumeText();
+      mustConsume("CLOSE");
+      result.push({
+        name: name_1 || (pattern_1 ? key++ : ""),
+        pattern: name_1 && !pattern_1 ? safePattern(prefix) : pattern_1,
+        prefix,
+        suffix,
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    mustConsume("END");
+  }
+  return result;
+}
+__name(parse, "parse");
+function match(str, options) {
+  var keys = [];
+  var re = pathToRegexp(str, keys, options);
+  return regexpToFunction(re, keys, options);
+}
+__name(match, "match");
+function regexpToFunction(re, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.decode, decode = _a === void 0 ? function(x) {
+    return x;
+  } : _a;
+  return function(pathname) {
+    var m = re.exec(pathname);
+    if (!m)
+      return false;
+    var path = m[0], index = m.index;
+    var params = /* @__PURE__ */ Object.create(null);
+    var _loop_1 = /* @__PURE__ */ __name(function(i2) {
+      if (m[i2] === void 0)
+        return "continue";
+      var key = keys[i2 - 1];
+      if (key.modifier === "*" || key.modifier === "+") {
+        params[key.name] = m[i2].split(key.prefix + key.suffix).map(function(value) {
+          return decode(value, key);
+        });
+      } else {
+        params[key.name] = decode(m[i2], key);
+      }
+    }, "_loop_1");
+    for (var i = 1; i < m.length; i++) {
+      _loop_1(i);
+    }
+    return { path, index, params };
+  };
+}
+__name(regexpToFunction, "regexpToFunction");
+function escapeString(str) {
+  return str.replace(/([.+*?=^!:${}()[\]|/\\])/g, "\\$1");
+}
+__name(escapeString, "escapeString");
+function flags(options) {
+  return options && options.sensitive ? "" : "i";
+}
+__name(flags, "flags");
+function regexpToRegexp(path, keys) {
+  if (!keys)
+    return path;
+  var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+  var index = 0;
+  var execResult = groupsRegex.exec(path.source);
+  while (execResult) {
+    keys.push({
+      // Use parenthesized substring match if available, index otherwise
+      name: execResult[1] || index++,
+      prefix: "",
+      suffix: "",
+      modifier: "",
+      pattern: ""
+    });
+    execResult = groupsRegex.exec(path.source);
+  }
+  return path;
+}
+__name(regexpToRegexp, "regexpToRegexp");
+function arrayToRegexp(paths, keys, options) {
+  var parts = paths.map(function(path) {
+    return pathToRegexp(path, keys, options).source;
+  });
+  return new RegExp("(?:".concat(parts.join("|"), ")"), flags(options));
+}
+__name(arrayToRegexp, "arrayToRegexp");
+function stringToRegexp(path, keys, options) {
+  return tokensToRegexp(parse(path, options), keys, options);
+}
+__name(stringToRegexp, "stringToRegexp");
+function tokensToRegexp(tokens, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.strict, strict = _a === void 0 ? false : _a, _b = options.start, start = _b === void 0 ? true : _b, _c = options.end, end = _c === void 0 ? true : _c, _d = options.encode, encode = _d === void 0 ? function(x) {
+    return x;
+  } : _d, _e = options.delimiter, delimiter = _e === void 0 ? "/#?" : _e, _f = options.endsWith, endsWith = _f === void 0 ? "" : _f;
+  var endsWithRe = "[".concat(escapeString(endsWith), "]|$");
+  var delimiterRe = "[".concat(escapeString(delimiter), "]");
+  var route = start ? "^" : "";
+  for (var _i = 0, tokens_1 = tokens; _i < tokens_1.length; _i++) {
+    var token = tokens_1[_i];
+    if (typeof token === "string") {
+      route += escapeString(encode(token));
+    } else {
+      var prefix = escapeString(encode(token.prefix));
+      var suffix = escapeString(encode(token.suffix));
+      if (token.pattern) {
+        if (keys)
+          keys.push(token);
+        if (prefix || suffix) {
+          if (token.modifier === "+" || token.modifier === "*") {
+            var mod = token.modifier === "*" ? "?" : "";
+            route += "(?:".concat(prefix, "((?:").concat(token.pattern, ")(?:").concat(suffix).concat(prefix, "(?:").concat(token.pattern, "))*)").concat(suffix, ")").concat(mod);
+          } else {
+            route += "(?:".concat(prefix, "(").concat(token.pattern, ")").concat(suffix, ")").concat(token.modifier);
+          }
+        } else {
+          if (token.modifier === "+" || token.modifier === "*") {
+            throw new TypeError('Can not repeat "'.concat(token.name, '" without a prefix and suffix'));
+          }
+          route += "(".concat(token.pattern, ")").concat(token.modifier);
+        }
+      } else {
+        route += "(?:".concat(prefix).concat(suffix, ")").concat(token.modifier);
+      }
+    }
+  }
+  if (end) {
+    if (!strict)
+      route += "".concat(delimiterRe, "?");
+    route += !options.endsWith ? "$" : "(?=".concat(endsWithRe, ")");
+  } else {
+    var endToken = tokens[tokens.length - 1];
+    var isEndDelimited = typeof endToken === "string" ? delimiterRe.indexOf(endToken[endToken.length - 1]) > -1 : endToken === void 0;
+    if (!strict) {
+      route += "(?:".concat(delimiterRe, "(?=").concat(endsWithRe, "))?");
+    }
+    if (!isEndDelimited) {
+      route += "(?=".concat(delimiterRe, "|").concat(endsWithRe, ")");
+    }
+  }
+  return new RegExp(route, flags(options));
+}
+__name(tokensToRegexp, "tokensToRegexp");
+function pathToRegexp(path, keys, options) {
+  if (path instanceof RegExp)
+    return regexpToRegexp(path, keys);
+  if (Array.isArray(path))
+    return arrayToRegexp(path, keys, options);
+  return stringToRegexp(path, keys, options);
+}
+__name(pathToRegexp, "pathToRegexp");
+
+// ../node_modules/wrangler/templates/pages-template-worker.ts
+var escapeRegex = /[.+?^${}()|[\]\\]/g;
+function* executeRequest(request) {
+  const requestPath = new URL(request.url).pathname;
+  for (const route of [...routes].reverse()) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult) {
+      for (const handler of route.middlewares.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: mountMatchResult.path
+        };
+      }
+    }
+  }
+  for (const route of routes) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: true
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult && route.modules.length) {
+      for (const handler of route.modules.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: matchResult.path
+        };
+      }
+      break;
+    }
+  }
+}
+__name(executeRequest, "executeRequest");
+var pages_template_worker_default = {
+  async fetch(originalRequest, env, workerContext) {
+    let request = originalRequest;
+    const handlerIterator = executeRequest(request);
+    let data = {};
+    let isFailOpen = false;
+    const next = /* @__PURE__ */ __name(async (input, init) => {
+      if (input !== void 0) {
+        let url = input;
+        if (typeof input === "string") {
+          url = new URL(input, request.url).toString();
+        }
+        request = new Request(url, init);
+      }
+      const result = handlerIterator.next();
+      if (result.done === false) {
+        const { handler, params, path } = result.value;
+        const context = {
+          request: new Request(request.clone()),
+          functionPath: path,
+          next,
+          params,
+          get data() {
+            return data;
+          },
+          set data(value) {
+            if (typeof value !== "object" || value === null) {
+              throw new Error("context.data must be an object");
+            }
+            data = value;
+          },
+          env,
+          waitUntil: workerContext.waitUntil.bind(workerContext),
+          passThroughOnException: () => {
+            isFailOpen = true;
+          }
+        };
+        const response = await handler(context);
+        if (!(response instanceof Response)) {
+          throw new Error("Your Pages function should return a Response");
+        }
+        return cloneResponse(response);
+      } else if ("ASSETS") {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      } else {
+        const response = await fetch(request);
+        return cloneResponse(response);
+      }
+    }, "next");
+    try {
+      return await next();
+    } catch (error) {
+      if (isFailOpen) {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      }
+      throw error;
+    }
+  }
+};
+var cloneResponse = /* @__PURE__ */ __name((response) => (
+  // https://fetch.spec.whatwg.org/#null-body-status
+  new Response(
+    [101, 204, 205, 304].includes(response.status) ? null : response.body,
+    response
+  )
+), "cloneResponse");
+export {
+  pages_template_worker_default as default
+};
+
+------formdata-undici-020285971403--
