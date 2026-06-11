@@ -1,0 +1,799 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BLACK CORP® — BÁO CÁO</title>
+    <link rel="icon" href="/logo.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="/logo.ico" type="image/x-icon" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner" id="topbar-inner">
+        <span class="brand" aria-label="BLACK CORP">BLACK CORP®</span>
+        <div id="topbar-nav" class="topbar-nav" hidden>
+          <div class="page-menu-wrap">
+            <button
+              type="button"
+              id="btn-app-menu"
+              class="btn-menu"
+              aria-expanded="false"
+              aria-controls="app-menu-panel"
+              aria-haspopup="true"
+              aria-label="Mở menu"
+            >
+              <span class="menu-icon" aria-hidden="true"></span>
+            </button>
+            <div id="app-menu-backdrop" class="app-menu-backdrop" hidden></div>
+            <div id="app-menu-panel" class="app-menu-panel" hidden>
+              <div class="app-menu-actions toolbar-actions">
+                <button type="button" id="btn-refresh" class="btn ghost menu-action">Làm mới</button>
+                <button type="button" id="btn-auto-sync" class="btn ghost menu-action" aria-pressed="false">
+                  Tự động: Tắt
+                </button>
+                <button type="button" id="btn-clear-cache" class="btn ghost menu-action">Xóa cache</button>
+                <button type="button" id="btn-logout" class="btn ghost menu-action">Log Out</button>
+              </div>
+              <div class="app-menu-divider" role="separator"></div>
+              <nav class="app-menu-nav" role="tablist" aria-label="Khu vực chính">
+                <button type="button" class="tab menu-item active" data-tab="thu_chi" role="tab" aria-selected="true">
+                  Thu chi
+                </button>
+                <button type="button" class="tab menu-item" data-tab="coc" role="tab" aria-selected="false">
+                  Tiền cọc
+                </button>
+                <button type="button" class="tab menu-item" data-tab="cong_no" role="tab" aria-selected="false">
+                  Công nợ
+                </button>
+                <button type="button" class="tab menu-item" data-tab="chi_tieu" role="tab" aria-selected="false">
+                  Chi tiêu
+                </button>
+                <button type="button" class="tab menu-item" data-tab="ban_dao" role="tab" aria-selected="false">
+                  Bán dao
+                </button>
+                <button type="button" class="tab menu-item" data-tab="luong_nv" role="tab" aria-selected="false">
+                  Lương NV
+                </button>
+                <button type="button" class="tab menu-item" data-tab="bao_cao" role="tab" aria-selected="false">
+                  Báo cáo
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="view-login" class="panel login-panel">
+        <h1 class="panel-title">Login</h1>
+        <p class="muted">Black Corp - Báo cáo</p>
+        <form id="form-login" class="form-stack">
+          <label class="field">
+            <span>Admin</span>
+            <input type="text" name="username" autocomplete="username" required class="input" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" name="password" autocomplete="current-password" required class="input" />
+          </label>
+          <p id="login-error" class="error" hidden></p>
+          <button type="submit" class="btn primary">Login</button>
+        </form>
+      </section>
+
+      <section id="view-app" class="app-root" hidden>
+        <p id="sync-status" class="status" aria-live="polite"></p>
+
+        <div class="tab-panels" id="admin-tab-panels" hidden>
+          <div class="tab-panel active" data-panel="thu_chi" role="tabpanel">
+            <h2 class="section-title">Thu chi</h2>
+            <div class="bot-panel panel-guide" id="panel-thu-chi-bot">
+              <h3 class="subsection-title">Bot Telegram - Thu Chi</h3>
+              <p class="muted small">
+                Dữ liệu dưới đây chỉ <strong>xem</strong> (đồng bộ từ Google Sheet).
+              </p>             
+              <ul class="muted small bot-panel-list">
+                <li>Nhóm: <strong>Thu chi - Black Corp</strong> (Chat ID <code>-1003727898214</code>)</li>
+                <li><strong>Thu chi:</strong> <code>THU: số - ghi chú</code> hoặc <code>CHI: số - ghi chú</code> — bot <strong>nối dòng cuối</strong> tab THU_CHI.</li>
+                <li><strong>Cọc (tab COC — file MAIN):</strong> <code>CỌC - THU - số - Tên - Ghi chú</code> hoặc <code>CỌC - CHI - số - Tên - Ghi chú</code> (một hoặc nhiều dòng). Hoặc cú pháp cũ <code>CỌC:</code> + <code>THU|CHI - số - ghi chú</code>.</li>
+                <li><strong>Công nợ:</strong> dòng đầu <code>CÔNG NỢ:</code>, các dòng <code>Tên - số</code> — ghi <strong>nối cuối</strong> tab <code>CONG_NO</code> trên file theo dõi tài khoản (<code>SPREADSHEET_ID_DEBT_SALES</code>).</li>
+                <li><strong>Bán dao:</strong> nhóm <code>-5091396609</code> — các dòng <code>TÊN:</code>, <code>ĐỊA CHỈ:</code>, …</li>
+                <li><strong>Báo cáo TK (tab <code>BAO_CAO_TK</code>):</strong> nhóm Telegram <code>-1003992397667</code> — <strong>nối cuối</strong> sheet; cột <strong>RATE (E)</strong> là số (vd. <code>0.55</code>); cú pháp <code>MCC:</code>, <code>TÀI KHOẢN:</code>, <code>TÊN:</code> (vd. <code>TP - 57</code>)</li>
+              </ul>
+            </div>           
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-thu-chi">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th class="th-num">Thu</th>
+                    <th class="th-num">Chi</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="coc" role="tabpanel" hidden>
+            <h2 class="section-title">Tiền cọc</h2>
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-coc">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th class="th-num">Thu</th>
+                    <th class="th-num">Chi</th>
+                    <th>Tên</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="cong_no" role="tabpanel" hidden>
+            <h2 class="section-title">Công nợ</h2>
+            <p class="muted small panel-guide">Đọc tab <strong>CONG_NO</strong> trên Google Sheet theo dõi tài khoản (<code>SPREADSHEET_ID_DEBT_SALES</code>).</p>
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-cong-no">
+                <thead>
+                  <tr>
+                    <th>Tên</th>
+                    <th class="th-num">Tiền nợ</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="chi_tieu" role="tabpanel" hidden>
+            <h2 class="section-title">Chi tiêu</h2>
+            <div class="bot-panel panel-guide" id="panel-chi-tieu-info">
+              <h3 class="subsection-title">Tab BAO_CAO_TK</h3>
+              <p class="muted small">
+                Dữ liệu đọc từ Google Sheet theo dõi tài khoản (<code>SPREADSHEET_ID_DEBT_SALES</code>) — tab
+                <strong>BAO_CAO_TK</strong>. Bot nhóm Telegram <code>-1003992397667</code> ghi thêm dòng (MCC / Tài khoản / Tên).
+              </p>
+              <ul class="muted small bot-panel-list">
+                <li>Chỉ đọc cột <strong>A</strong> (Ngày), <strong>B</strong> (MCC), <strong>H</strong> (Quy đổi USD), <strong>I</strong> (Tổng thu), <strong>L</strong> (Nguồn).</li>
+                <li>Cột <strong>A</strong> = ngày (kể cả serial Sheet); cột <strong>B</strong> = MCC — cùng B = cùng MCC + nguồn.</li>
+                <li>Chỉ tính H/I khi cột B có dữ liệu; cùng ngày + B + nguồn (nhiều tài khoản) được <strong>cộng</strong> H/I thành một MCC.</li>
+                <li>Chi tiết ngày: tổng tiêu/thu <strong>từng MCC</strong>; nguồn hiển thị cuối dòng.</li>
+                <li><strong>Lọc nguồn</strong>: hiển thị từng ngày có MCC — tổng tiêu/thu của nguồn đã chọn.</li>
+              </ul>
+            </div>
+
+            <label class="field chi-tieu-filter-field">
+              <span>Lọc theo nguồn</span>
+              <select id="chi-tieu-nguon-filter" class="input">
+                <option value="">Tất cả nguồn</option>
+              </select>
+            </label>
+
+            <div id="wrap-chi-tieu-by-nguon" hidden>
+              <h3 class="subsection-title">
+                Nguồn <strong id="chi-tieu-by-nguon-label">—</strong>
+              </h3>
+              <p class="muted small panel-guide" id="chi-tieu-by-nguon-scope"></p>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-by-nguon">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th>MCC</th>
+                      <th class="th-num">Tổng tiêu (H)</th>
+                      <th class="th-num">Tổng thu (I)</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <h3 class="subsection-title report-tc-today-heading">Chi tiêu hôm nay (GMT+7)</h3>
+            <p class="muted small">
+              Ngày: <strong id="chi-tieu-today-label">—</strong>
+            </p>
+            <div class="report-tc-today-summary">
+              <p class="report-tc-today-money" id="chi-tieu-today-tieu">Tổng tiêu: —</p>
+              <p class="report-tc-today-money" id="chi-tieu-today-thu">Tổng thu: —</p>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-chi-tieu-today-mcc">
+                <thead>
+                  <tr>
+                    <th>MCC</th>
+                    <th class="th-num">Tổng tiêu (H)</th>
+                    <th class="th-num">Tổng thu (I)</th>
+                    <th>Nguồn</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <h3 class="subsection-title">Báo cáo theo tháng / ngày / nguồn</h3>
+            <p class="muted small panel-guide">Chọn tháng → chọn ngày để xem từng MCC (H/I). Phần <strong>Theo nguồn</strong> tổng hợp theo tháng.</p>
+
+            <div id="wrap-chi-tieu-months">
+              <h4 class="report-tc-nav-title">Theo tháng</h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-chi-tieu-month">
+                  <thead>
+                    <tr>
+                      <th>Tháng</th>
+                      <th class="th-num">Tổng tiêu</th>
+                      <th class="th-num">Tổng thu</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <h4 class="report-tc-nav-title" id="chi-tieu-month-nguon-heading" style="margin-top: 1rem">
+                Theo nguồn — <span id="chi-tieu-month-nguon-label">Tháng hiện tại (GMT+7)</span>
+              </h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-month-nguon">
+                  <thead>
+                    <tr>
+                      <th>Nguồn</th>
+                      <th class="th-num">Tổng tiêu</th>
+                      <th class="th-num">Tổng thu</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-chi-tieu-days" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-chi-tieu-back-month">← Tháng</button>
+                <h4 class="report-tc-nav-title">
+                  Ngày trong <strong id="chi-tieu-month-label">—</strong>
+                </h4>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-chi-tieu-days">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th class="th-num">Tổng tiêu</th>
+                      <th class="th-num">Tổng thu</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <h4 class="report-tc-nav-title" id="chi-tieu-days-nguon-heading" style="margin-top: 1rem">
+                Theo nguồn — <span id="chi-tieu-days-nguon-label">—</span>
+              </h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-days-nguon">
+                  <thead>
+                    <tr>
+                      <th>Nguồn</th>
+                      <th class="th-num">Tổng tiêu</th>
+                      <th class="th-num">Tổng thu</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-chi-tieu-detail" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-chi-tieu-back-days">← Ngày</button>
+                <h4 class="report-tc-nav-title">
+                  Chi tiết <strong id="chi-tieu-day-label">—</strong>
+                </h4>
+              </div>
+              <div class="report-tc-day-summary">
+                <p class="report-tc-today-money" id="chi-tieu-day-tieu">Tổng tiêu: —</p>
+                <p class="report-tc-today-money" id="chi-tieu-day-thu">Tổng thu: —</p>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-detail-mcc">
+                  <thead>
+                    <tr>
+                      <th>MCC</th>
+                      <th class="th-num">Tổng tiêu (H)</th>
+                      <th class="th-num">Tổng thu (I)</th>
+                      <th>Nguồn</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="ban_dao" role="tabpanel" hidden>
+            <h2 class="section-title">Bán dao</h2>
+            <p class="muted small panel-guide">
+              Đọc từ Google Sheet (tab <strong>BAN_DAO</strong>). Bot nhóm <strong>Báo Đơn Dao US</strong> ghi thêm dòng khi gửi đúng cú pháp.
+            </p>
+            <h3 class="subsection-title">Chi tiết đơn</h3>
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-ban-dao">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Tên</th>
+                    <th>Địa chỉ</th>
+                    <th>SĐT</th>
+                    <th class="th-num">Số lượng</th>
+                    <th class="th-num">Giá</th>
+                    <th class="th-num">Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <h3 class="subsection-title">Báo cáo theo tháng / ngày</h3>
+            <p class="muted small panel-guide">Chọn tháng → chọn ngày để xem chi tiết đơn và tổng thành tiền (cột G).</p>
+
+            <div id="wrap-bandao-panel-months">
+              <h4 class="report-tc-nav-title">Theo tháng</h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-bandao-panel-month">
+                  <thead>
+                    <tr>
+                      <th>Tháng</th>
+                      <th class="th-num">Tổng tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-bandao-panel-days" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-bandao-panel-back-month">← Tháng</button>
+                <h4 class="report-tc-nav-title">
+                  Ngày trong <strong id="bandao-panel-month-label">—</strong>
+                </h4>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-bandao-panel-days">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th class="th-num">Tổng tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-bandao-panel-detail" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-bandao-panel-back-days">← Ngày</button>
+                <h4 class="report-tc-nav-title">
+                  Chi tiết <strong id="bandao-panel-day-label">—</strong>
+                </h4>
+              </div>
+              <div class="report-tc-day-summary">
+                <p class="report-tc-today-money" id="bandao-panel-day-total">Tổng thành tiền: —</p>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-bandao-panel-detail">
+                  <thead>
+                    <tr>
+                      <th>Tên</th>
+                      <th>Địa chỉ</th>
+                      <th>SĐT</th>
+                      <th class="th-num">Số lượng</th>
+                      <th class="th-num">Giá</th>
+                      <th class="th-num">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-panel="luong_nv" role="tabpanel" hidden>
+            <h2 class="section-title">Lương NV</h2>
+            <div class="bot-panel panel-guide" id="panel-luong-nv-info">
+              <h3 class="subsection-title">Cách tính lương</h3>
+              <ul class="muted small bot-panel-list">
+                <li>
+                  <strong>Chấm công:</strong> file Google Sheet chấm công — mỗi tab là một nhân viên (kể cả tab
+                  <strong>SUBEO</strong> — vừa là NV, vừa là mẫu copy tab mới); cột <strong>B</strong> có tick = 1 ngày công.
+                </li>
+                <li>
+                  <strong>Tỉ giá:</strong> ô <strong>F2</strong> (SUBEO và mỗi tab NV) —
+                  công thức <code>=GOOGLEFINANCE("CURRENCY:USDVND")</code> (tab mới tạo trên web tự copy F2 từ SUBEO).
+                </li>
+                <li>
+                  <strong>Lương cơ bản (USD):</strong> 10&nbsp;000&nbsp;000&nbsp;₫ ÷ tỉ giá F2 ÷ ngày trong tháng × ngày công.
+                </li>
+                <li>
+                  <strong>Tháng trước:</strong> tính đủ cả tháng (vd. tháng 6 hiển thị lương tháng 5, kỳ chi trả ngày
+                  01/06).
+                </li>
+                <li>
+                  <strong>Tháng hiện tại:</strong> ngày công và hoa hồng chỉ tính tới hôm nay (GMT+7).
+                </li>
+                <li>
+                  <strong>Hoa hồng 1%:</strong> (Tổng thu − Tổng chi) × 1% trên tab THU_CHI; không tính thu khi khách
+                  trả công nợ <strong>ROKER (3.000)</strong> và <strong>GM (8.000)</strong> trong CONG_NO.
+                </li>
+                <li>
+                  <strong>Tiền phạt / Thưởng:</strong> tổng cột <strong>D</strong> (phạt) và <strong>E</strong> (thưởng) trong tháng
+                  (USD) — mỗi tab nhân viên trên file chấm công.
+                </li>
+                <li>
+                  <strong>Loại trừ HH:</strong> tab <strong>HH_LOAI_TRU</strong> (file MAIN) — A ngày, B ghi chú, C khoản thu;
+                  khớp với <strong>THU_CHI</strong> (A ngày, D ghi chú, B thu) thì không tính HH.
+                </li>
+                <li>
+                  <strong>Tiền ứng:</strong> ô <strong>C2</strong> trên mỗi tab nhân viên (USD).
+                </li>
+                <li>
+                  <strong>Tổng lương (USD):</strong> Lương CB + HH − Phạt + Thưởng − Ứng C2 (tất cả USD).
+                </li>
+              </ul>
+              <p class="muted small" id="luong-nv-ty-gia-info" aria-live="polite"></p>
+            </div>
+
+            <section class="luong-nv-cham-cong" id="section-cham-cong-nv">
+              <h3 class="subsection-title">Tab nhân viên chấm công</h3>
+              <p class="muted small panel-guide">
+                Tab <strong>SUBEO</strong> vừa tính lương như nhân viên, vừa là mẫu copy tab mới (A ngày, B chấm công, C tiền ứng, D phạt, E thưởng,
+                <strong>F2 tỉ giá</strong>). Qua ngày mới: cài Apps Script
+                <code>scripts/CHAM-CONG-APPS-SCRIPT.gs</code> → menu <strong>Chấm công</strong> →
+                <strong>Bật tự thêm ngày mới mỗi ngày</strong> (kéo dòng ngày trong Bảng). Web cũng tự thêm khi tải dữ liệu.
+              </p>
+              <div class="luong-nv-excl-grid">
+                <label class="field">
+                  <span>Tên tab mới</span>
+                  <input type="text" id="cham-cong-nv-tab-name" class="input" placeholder="VD: BLACK" />
+                </label>
+                <div class="toolbar-actions luong-nv-cham-cong-actions">
+                  <button type="button" class="btn primary" id="btn-cham-cong-nv-create">Tạo tab</button>
+                  <button type="button" class="btn ghost" id="btn-cham-cong-nv-refresh">Làm mới DS</button>
+                </div>
+              </div>
+              <p id="cham-cong-nv-status" class="status" aria-live="polite"></p>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-cham-cong-nv">
+                  <thead>
+                    <tr>
+                      <th>Tab Sheet</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="luong-nv-exclusions" id="section-hh-loai-tru">
+              <h3 class="subsection-title">Loại trừ hoa hồng (tab HH_LOAI_TRU — file MAIN)</h3>
+              <p class="muted small panel-guide">
+                Lưu trên file <strong>MAIN</strong> (cùng file THU_CHI), tab <strong>HH_LOAI_TRU</strong>: cột
+                <strong>A Ngày</strong>, <strong>B Ghi chú</strong>, <strong>C Khoản thu</strong>.
+                Khi tính HH, đối chiếu tab <strong>THU_CHI</strong> (file MAIN):
+                <strong>A ngày</strong>, <strong>D ghi chú</strong>, <strong>B thu</strong> — khớp cả ba thì không tính vào thu có hoa hồng.
+              </p>
+              <form id="form-hh-loai-tru" class="form-stack luong-nv-excl-form">
+                <div class="luong-nv-excl-grid">
+                  <label class="field">
+                    <span>Ngày</span>
+                    <input type="date" id="hh-loai-tru-ngay" class="input" required />
+                  </label>
+                  <label class="field">
+                    <span>Tên đại lý (khớp Ghi chú)</span>
+                    <input type="text" id="hh-loai-tru-ten" class="input" required placeholder="VD: REFUND-TP" />
+                  </label>
+                  <label class="field">
+                    <span>Khoản thu (USD)</span>
+                    <input type="text" id="hh-loai-tru-thu" class="input" required inputmode="decimal" placeholder="VD: 500" />
+                  </label>
+                </div>
+                <div class="toolbar-actions">
+                  <button type="submit" class="btn ghost" id="btn-hh-loai-tru-add">Thêm dòng</button>
+                  <button type="button" class="btn ghost" id="btn-hh-loai-tru-reload">Tải lại từ Sheet</button>
+                  <button type="button" class="btn primary" id="btn-hh-loai-tru-save">Lưu danh sách</button>
+                </div>
+                <p class="muted small">
+                  «Lưu danh sách» chỉ <strong>thêm dòng mới</strong> xuống Sheet (không xóa dòng cũ) — giữ lịch sử đối chiếu HH từng tháng.
+                  Dùng nút <strong>Tải lại từ Sheet</strong> để xem toàn bộ danh sách trên tab HH_LOAI_TRU.
+                </p>
+                <p id="hh-loai-tru-status" class="status" aria-live="polite"></p>
+              </form>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-hh-loai-tru">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th>Tên đại lý</th>
+                      <th class="th-num">Khoản thu</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </section>
+
+            <div id="wrap-luong-nv-periods"></div>
+          </div>
+
+          <div class="tab-panel" data-panel="bao_cao" role="tabpanel" hidden>
+            <h2 class="section-title">Báo cáo</h2>
+
+            <div class="du-dau-doc-sheet" role="status" aria-live="polite" id="section-sensitive-balance" hidden>
+              <p class="du-dau-doc-label"><strong>Balance</strong></p>
+              <p class="du-dau-doc-value" id="so-du-dau-doc-hien-thi">—</p>
+              <p class="du-dau-doc-hint muted small panel-guide" id="so-du-dau-doc-raw" hidden></p>
+              <p class="du-dau-doc-label" style="margin-top: 0.85rem">
+                <strong>Balance Fluctuations</strong>
+              </p>
+              <p class="du-dau-doc-value" id="bien-dong-doc-hien-thi">—</p>
+            </div>
+            <div class="du-dau-actions">
+              <button type="button" class="btn secondary" id="btn-reveal-balance">Presently</button>
+              <button type="button" class="btn ghost" id="btn-hide-balance" hidden>Hide</button>
+            </div>
+
+            <h3 class="subsection-title" style="margin-top: 0.85rem">Theo dữ liệu Sheet</h3>
+            <p class="muted small panel-guide">Cập nhật từ tiền cọc và công nợ (cùng số trong ô B2–D2 trên Tổng quan).</p>
+            <div class="grid-overview grid-balance-totals">
+              <label class="field">
+                <span>Tổng cọc</span>
+                <input type="text" id="tq-b2" class="input" readonly />
+              </label>
+              <label class="field">
+                <span>Nhận cọc</span>
+                <input type="text" id="tq-c2" class="input" readonly />
+              </label>
+              <label class="field">
+                <span>Tổng công nợ</span>
+                <input type="text" id="tq-d2" class="input" readonly />
+              </label>
+            </div>
+
+            <div class="grid-overview" id="grid-balance-edit" hidden>
+              <label class="field">
+                <span>Balance (nhập ô A2)</span>
+                <input type="password" id="tq-a2" class="input" inputmode="decimal" />
+              </label>
+              <label class="field">
+                <span>Balance Fluctuations (ô E2)</span>
+                <input type="password" id="tq-e2" class="input" readonly />
+              </label>
+            </div>
+
+            <h3 class="subsection-title">Báo cáo thu chi</h3>
+            <div class="thu-chi-report-toolbar">
+              <div class="thu-chi-report-modes" role="group" aria-label="Kiểu báo cáo thu chi">
+                <button
+                  type="button"
+                  class="btn ghost report-thu-chi-mode-btn active"
+                  id="btn-report-thu-chi-mode-monthly"
+                  data-mode="monthly"
+                  aria-pressed="true"
+                >
+                  Theo tháng (tất cả)
+                </button>
+                <button
+                  type="button"
+                  class="btn ghost report-thu-chi-mode-btn"
+                  id="btn-report-thu-chi-mode-nguon"
+                  data-mode="nguon"
+                  aria-pressed="false"
+                >
+                  Đại Lý &amp; Nguồn
+                </button>
+              </div>
+              <label class="field thu-chi-nguon-filter-field" id="wrap-report-thu-chi-nguon-filter" hidden>
+                <span>Chọn nguồn (ghi chú)</span>
+                <select id="report-thu-chi-nguon-filter" class="input">
+                  <option value="">— Chọn nguồn —</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="wrap-report-tc-months">
+              <h4 class="report-tc-nav-title">Theo tháng</h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-report-tc-month">
+                  <thead>
+                    <tr>
+                      <th>Tháng</th>
+                      <th class="th-num">Tổng thu</th>
+                      <th class="th-num">Tổng chi</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-report-tc-days" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-report-tc-back-month">← Tháng</button>
+                <h4 class="report-tc-nav-title">
+                  Ngày trong <strong id="report-tc-month-label">—</strong>
+                  <span id="report-tc-nguon-label" hidden></span>
+                </h4>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-report-tc-days">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th class="th-num">Tổng thu</th>
+                      <th class="th-num">Tổng chi</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-report-tc-detail" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-report-tc-back-days">← Ngày</button>
+                <h4 class="report-tc-nav-title">
+                  Chi tiết <strong id="report-tc-day-label">—</strong>
+                </h4>
+              </div>
+              <div class="report-tc-day-summary">
+                <p class="report-tc-today-money" id="report-tc-day-thu">Tổng thu: —</p>
+                <p class="report-tc-today-money" id="report-tc-day-chi">Tổng chi: —</p>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-report-tc-detail">
+                  <thead>
+                    <tr>
+                      <th class="th-num">Thu</th>
+                      <th class="th-num">Chi</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <h3 class="subsection-title report-tc-today-heading">Thu chi hôm nay (GMT+7)</h3>
+            <p class="muted small panel-guide">Tab THU_CHI — luôn hiển thị báo cáo theo ngày hiện tại.</p>
+            <div class="report-tc-today-summary">
+              <p class="muted small">
+                Ngày <strong id="report-thu-chi-today-label">—</strong>
+              </p>
+              <p class="report-tc-today-money" id="report-thu-chi-today-thu">Tổng thu: —</p>
+              <p class="report-tc-today-money" id="report-thu-chi-today-chi">Tổng chi: —</p>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-report-tc-today">
+                <thead>
+                  <tr>
+                    <th class="th-num">Thu</th>
+                    <th class="th-num">Chi</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+
+            <h3 class="subsection-title report-bd-report-heading">Báo cáo bán dao</h3>
+            <p class="muted small panel-guide">
+              Chọn tháng → chọn ngày để xem chi tiết đơn và tổng <strong>Thành tiền (G)</strong> (GMT+7).
+            </p>
+
+            <div id="wrap-report-bd-months">
+              <h4 class="report-tc-nav-title">Theo tháng</h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-report-bd-month">
+                  <thead>
+                    <tr>
+                      <th>Tháng</th>
+                      <th class="th-num">Tổng tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-report-bd-days" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-report-bd-back-month">← Tháng</button>
+                <h4 class="report-tc-nav-title">
+                  Ngày trong <strong id="report-bd-month-label">—</strong>
+                </h4>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned data-table-clickable" id="table-report-bd-days">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th class="th-num">Tổng tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="wrap-report-bd-detail" hidden>
+              <div class="report-tc-nav-bar">
+                <button type="button" class="btn ghost btn-sm" id="btn-report-bd-back-days">← Ngày</button>
+                <h4 class="report-tc-nav-title">
+                  Chi tiết <strong id="report-bd-day-label">—</strong>
+                </h4>
+              </div>
+              <div class="report-tc-day-summary">
+                <p class="report-tc-today-money" id="report-bd-day-total">Tổng thành tiền: —</p>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-report-bd-detail">
+                  <thead>
+                    <tr>
+                      <th>Tên</th>
+                      <th>Địa chỉ</th>
+                      <th>SĐT</th>
+                      <th class="th-num">Số lượng</th>
+                      <th class="th-num">Giá</th>
+                      <th class="th-num">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <h3 class="subsection-title report-tc-today-heading">Bán dao hôm nay (GMT+7)</h3>
+            <p class="muted small panel-guide">Tab BAN_DAO — luôn hiển thị báo cáo theo ngày hiện tại.</p>
+            <div class="report-tc-today-summary">
+              <p class="muted small">
+                Ngày <strong id="report-bd-today-label">—</strong>
+              </p>
+              <p class="report-tc-today-money" id="report-bd-today-total">Tổng thành tiền: —</p>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table data-table-aligned" id="table-report-bd-today">
+                <thead>
+                  <tr>
+                    <th>Tên</th>
+                    <th>Địa chỉ</th>
+                    <th>SĐT</th>
+                    <th class="th-num">Số lượng</th>
+                    <th class="th-num">Giá</th>
+                    <th class="th-num">Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
