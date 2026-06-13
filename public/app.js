@@ -1317,12 +1317,10 @@ function renderLuongNv() {
   wrap.innerHTML = periods
     .map((period, idx) => {
       const cb = period.commissionBase ?? {};
-      const exclCongNo = cb.thuExcludedCongNo ?? 0;
       const exclThu = cb.thuExcludedHhLoaiTru ?? 0;
       const exclChi = cb.chiExcludedHhLoaiTru ?? 0;
-      const exclTotal = cb.thuExcluded ?? exclCongNo + exclThu;
+      const exclTotal = cb.thuExcluded ?? exclThu;
       const exclParts = [];
-      if (exclCongNo > 0) exclParts.push(`trả công nợ: ${cellMoneyDisplay(exclCongNo)}`);
       if (exclThu > 0) exclParts.push(`loại thu: ${cellMoneyDisplay(exclThu)}`);
       if (exclChi > 0) exclParts.push(`loại chi: ${cellMoneyDisplay(exclChi)}`);
       const filterTab = (state.selectedChamCongNvTab || "").trim();

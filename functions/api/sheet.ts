@@ -177,9 +177,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     const cocData =
       cocRaw.length > 1 ? parseRows(cocRaw.slice(1).map(normalizeCocDataRow), 5) : [];
     const congNoData = cn.length > 1 ? parseRows(cn.slice(1), 2) : [];
-    const congNoNames = congNoData
-      .map((r) => String(r[0] ?? "").trim())
-      .filter((n) => n.length > 0);
 
     const sumCocB = cocData.reduce((s, r) => s + num(r[1]), 0);
     const sumCocC = cocData.reduce((s, r) => s + num(r[2]), 0);
@@ -285,7 +282,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       console.error(`[Sheets] ty gia F2: ${msg}`);
     }
 
-    let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig, congNoNames);
+    let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
     try {
       const idChamCong = spreadsheetIdChamCong(env);
       await ensureTodayDateRowsAllTabs(token, idChamCong);
@@ -299,7 +296,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         hhLoaiTru,
         luongNvConfig,
         () => loadAttendanceSheets(token, idChamCong),
-        congNoNames,
       );
       reportLuongNv = buildLuongNvReport(
         attendanceSheets,
@@ -307,7 +303,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         todayVn,
         hhLoaiTru,
         luongNvConfig,
-        congNoNames,
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

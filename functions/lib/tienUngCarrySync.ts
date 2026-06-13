@@ -57,7 +57,6 @@ export async function syncAdvanceCarryToFirstDayAllTabs(
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
   reloadSheets: () => Promise<AttendanceSheetRows[]>,
-  congNoNames: string[] = [],
 ): Promise<AttendanceSheetRows[]> {
   const currentMonth = todayIso.slice(0, 7);
   const previousMonth = previousMonthIso(currentMonth);
@@ -70,7 +69,6 @@ export async function syncAdvanceCarryToFirstDayAllTabs(
       thuChi,
       hhLoaiTruRules,
       config,
-      congNoNames,
     );
     const rowIdx = findRowIndexForMonthDay(sheet.rows, currentMonth, 1);
     if (rowIdx == null) continue;

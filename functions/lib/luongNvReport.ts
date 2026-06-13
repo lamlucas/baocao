@@ -42,7 +42,6 @@ export type LuongNvPeriod = {
   commissionBase: {
     tongThu: number;
     tongChi: number;
-    thuExcludedCongNo: number;
     thuExcludedHhLoaiTru: number;
     chiExcludedHhLoaiTru: number;
     thuExcluded: number;
@@ -199,9 +198,8 @@ function commissionForMonth(
   thuChi: ThuChiRow[],
   monthIso: string,
   hhLoaiTruRules: HhLoaiTruRule[],
-  congNoNames: string[] = [],
 ): number {
-  const agg = aggregateThuChiMonth(thuChi, monthIso, null, hhLoaiTruRules, congNoNames);
+  const agg = aggregateThuChiMonth(thuChi, monthIso, null, hhLoaiTruRules);
   return Math.max(0, agg.netThu - agg.tongChi) * HOA_HONG_RATE;
 }
 
@@ -230,9 +228,8 @@ export function computeAdvanceCarryOutForMonth(
   thuChi: ThuChiRow[],
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
-  congNoNames: string[] = [],
 ): number {
-  const commissionUsd = commissionForMonth(thuChi, monthIso, hhLoaiTruRules, congNoNames);
+  const commissionUsd = commissionForMonth(thuChi, monthIso, hhLoaiTruRules);
   const gross = calcEmployeeGrossBeforeAdvance(rows, monthIso, null, commissionUsd, config);
   const pool = sumAdvanceInMonth(rows, monthIso, null);
   return Math.max(0, pool - gross);
@@ -245,9 +242,8 @@ function calcTienUngForPeriod(
   thuChi: ThuChiRow[],
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
-  congNoNames: string[] = [],
 ): { tienUngUsd: number; carryOutUsd: number } {
-  const commissionUsd = commissionForMonth(thuChi, monthIso, hhLoaiTruRules, congNoNames);
+  const commissionUsd = commissionForMonth(thuChi, monthIso, hhLoaiTruRules);
   const gross = calcEmployeeGrossBeforeAdvance(rows, monthIso, cutoffDay, commissionUsd, config);
   const tienUngUsd = sumAdvanceInMonth(rows, monthIso, cutoffDay);
   return { tienUngUsd, carryOutUsd: Math.max(0, tienUngUsd - gross) };
@@ -292,40 +288,14 @@ function isHeaderRow(row: unknown[]): boolean {
   );
 }
 
-function normalizeName(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function nameMatches(haystack: string, needle: string): boolean {
-  const h = normalizeName(haystack);
-  const n = normalizeName(needle);
-  if (!h || !n) return false;
-  return h === n || h.includes(n) || n.includes(h);
-}
-
-/** Thu từ THU_CHI bị loại khi khách trả công nợ — so khớp tên CONG_NO (cột A) ↔ THU_CHI (cột D), không phân biệt hoa thường. */
-export function isExcludedCongNoThuPayment(
-  thu: number,
-  tenColD: string,
-  congNoNames: string[] = [],
-): boolean {
-  if (thu <= 0) return false;
-  for (const cnName of congNoNames) {
-    if (nameMatches(tenColD, cnName)) return true;
-  }
-  return false;
-}
-
 export function aggregateThuChiMonth(
   thuChi: ThuChiRow[],
   monthIso: string,
   cutoffDay: number | null,
   hhLoaiTruRules: HhLoaiTruRule[] = [],
-  congNoNames: string[] = [],
 ): {
   tongThu: number;
   tongChi: number;
-  thuExcludedCongNo: number;
   thuExcludedHhLoaiTru: number;
   chiExcludedHhLoaiTru: number;
   thuExcluded: number;
@@ -333,7 +303,6 @@ export function aggregateThuChiMonth(
 } {
   let tongThu = 0;
   let tongChi = 0;
-  let thuExcludedCongNo = 0;
   let thuExcludedHhLoaiTru = 0;
   let chiExcludedHhLoaiTru = 0;
   for (const r of thuChi) {
@@ -348,21 +317,16 @@ export function aggregateThuChiMonth(
     } else {
       tongChi += chi;
     }
-    if (isExcludedCongNoThuPayment(thu, r.ghiChu ?? "", congNoNames)) {
-      thuExcludedCongNo += thu;
-      continue;
-    }
     if (isThuExcludedByHhLoaiTruRules(r, hhLoaiTruRules)) {
       thuExcludedHhLoaiTru += thu;
       continue;
     }
     tongThu += thu;
   }
-  const thuExcluded = thuExcludedCongNo + thuExcludedHhLoaiTru;
+  const thuExcluded = thuExcludedHhLoaiTru;
   return {
     tongThu,
     tongChi,
-    thuExcludedCongNo,
     thuExcludedHhLoaiTru,
     chiExcludedHhLoaiTru,
     thuExcluded,
@@ -389,10 +353,9 @@ function buildPeriod(
   todayIso: string,
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
-  congNoNames: string[] = [],
 ): LuongNvPeriod {
   const dim = daysInCalendarMonth(monthIso);
-  const thuChiAgg = aggregateThuChiMonth(thuChi, monthIso, cutoffDay, hhLoaiTruRules, congNoNames);
+  const thuChiAgg = aggregateThuChiMonth(thuChi, monthIso, cutoffDay, hhLoaiTruRules);
   const profit = thuChiAgg.netThu - thuChiAgg.tongChi;
   const commissionUsd = Math.max(0, profit) * HOA_HONG_RATE;
 
@@ -408,7 +371,6 @@ function buildPeriod(
       thuChi,
       hhLoaiTruRules,
       config,
-      congNoNames,
     );
     const tongLuongUsd = baseSalaryUsd + commissionUsd - tienPhatUsd + tienThuongUsd;
     const thucNhanUsd = tongLuongUsd - tienUngUsd;
@@ -470,7 +432,6 @@ export function buildLuongNvReport(
   todayIso: string,
   hhLoaiTruRules: HhLoaiTruRule[] = [],
   config: LuongNvConfig,
-  congNoNames: string[] = [],
 ): LuongNvReport {
   const currentMonth = todayIso.slice(0, 7);
   const previousMonth = previousMonthIso(currentMonth);
@@ -482,8 +443,8 @@ export function buildLuongNvReport(
     previousMonth,
     config,
     periods: [
-      buildPeriod("previous", previousMonth, null, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config, congNoNames),
-      buildPeriod("current", currentMonth, todayDay, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config, congNoNames),
+      buildPeriod("previous", previousMonth, null, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config),
+      buildPeriod("current", currentMonth, todayDay, attendanceSheets, thuChi, todayIso, hhLoaiTruRules, config),
     ],
   };
 }
