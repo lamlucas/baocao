@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { maybeDeleteCongNoRowAfterThu } from "../lib/congNoSheet";
+import { applyCongNoAfterThu } from "../lib/congNoSheet";
 import { getSheetsAccessToken, sheetsBatchGet, sheetsBatchGetMergeSafe, sheetsBatchUpdate, sheetsValuesAppend } from "../lib/google";
 import {
   buildCocAppendRows,
@@ -302,7 +302,7 @@ async function writeThuChiEntryToSheet(env: Env, unix: number, thuChiOne: ThuChi
 
   if (thuChiOne.kind === "THU") {
     try {
-      await maybeDeleteCongNoRowAfterThu(
+      await applyCongNoAfterThu(
         token,
         env.SPREADSHEET_ID_DEBT_SALES,
         SHEET_CN,
@@ -311,7 +311,7 @@ async function writeThuChiEntryToSheet(env: Env, unix: number, thuChiOne: ThuChi
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("maybeDeleteCongNoRowAfterThu", msg);
+      console.error("applyCongNoAfterThu", msg);
     }
   }
 }

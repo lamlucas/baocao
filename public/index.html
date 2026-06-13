@@ -43,10 +43,7 @@
               </div>
               <div class="app-menu-divider" role="separator"></div>
               <nav class="app-menu-nav" role="tablist" aria-label="Khu vực chính">
-                <button type="button" class="tab menu-item active" data-tab="thu_chi" role="tab" aria-selected="true">
-                  Thu chi
-                </button>
-                <button type="button" class="tab menu-item" data-tab="coc" role="tab" aria-selected="false">
+                <button type="button" class="tab menu-item active" data-tab="coc" role="tab" aria-selected="true">
                   Tiền cọc
                 </button>
                 <button type="button" class="tab menu-item" data-tab="cong_no" role="tab" aria-selected="false">
@@ -90,37 +87,7 @@
         <p id="sync-status" class="status" aria-live="polite"></p>
 
         <div class="tab-panels" id="admin-tab-panels" hidden>
-          <div class="tab-panel active" data-panel="thu_chi" role="tabpanel">
-            <h2 class="section-title">Thu chi</h2>
-            <div class="bot-panel panel-guide" id="panel-thu-chi-bot">
-              <h3 class="subsection-title">Bot Telegram - Thu Chi</h3>
-              <p class="muted small">
-                Dữ liệu dưới đây chỉ <strong>xem</strong> (đồng bộ từ Google Sheet).
-              </p>             
-              <ul class="muted small bot-panel-list">
-                <li>Nhóm: <strong>Thu chi - Black Corp</strong> (Chat ID <code>-1003727898214</code>)</li>
-                <li><strong>Thu chi:</strong> <code>THU: số - ghi chú</code> hoặc <code>CHI: số - ghi chú</code> — bot <strong>nối dòng cuối</strong> tab THU_CHI.</li>
-                <li><strong>Cọc (tab COC — file MAIN):</strong> <code>CỌC - THU - số - Tên - Ghi chú</code> hoặc <code>CỌC - CHI - số - Tên - Ghi chú</code> (một hoặc nhiều dòng). Hoặc cú pháp cũ <code>CỌC:</code> + <code>THU|CHI - số - ghi chú</code>.</li>
-                <li><strong>Công nợ:</strong> dòng đầu <code>CÔNG NỢ:</code>, các dòng <code>Tên - số</code> — ghi <strong>nối cuối</strong> tab <code>CONG_NO</code> trên file theo dõi tài khoản (<code>SPREADSHEET_ID_DEBT_SALES</code>).</li>
-                <li><strong>Báo cáo TK (tab <code>BAO_CAO_TK</code>):</strong> nhóm Telegram <code>-1003992397667</code> — <strong>nối cuối</strong> sheet; cột <strong>RATE (E)</strong> là số (vd. <code>0.55</code>); cú pháp <code>MCC:</code>, <code>TÀI KHOẢN:</code>, <code>TÊN:</code> (vd. <code>TP - 57</code>)</li>
-              </ul>
-            </div>           
-            <div class="table-wrap">
-              <table class="data-table data-table-aligned" id="table-thu-chi">
-                <thead>
-                  <tr>
-                    <th>Ngày</th>
-                    <th class="th-num">Thu</th>
-                    <th class="th-num">Chi</th>
-                    <th>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="tab-panel" data-panel="coc" role="tabpanel" hidden>
+          <div class="tab-panel active" data-panel="coc" role="tabpanel">
             <h2 class="section-title">Tiền cọc</h2>
             <div class="table-wrap">
               <table class="data-table data-table-aligned" id="table-coc">

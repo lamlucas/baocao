@@ -914,6 +914,7 @@ function cellMoneyDisplay(raw) {
 
 function renderThuChi() {
   const tb = tbody("table-thu-chi");
+  if (!tb) return;
   tb.innerHTML = "";
   state.thuChi.forEach((r) => {
     const tr = document.createElement("tr");
@@ -1768,7 +1769,7 @@ async function main() {
   bindLuongNvToolbar();
   bindChamCongNvPanel();
   resetHhLoaiTruFormDefaults();
-  activateTab("thu_chi");
+  activateTab("coc");
   bindOverviewInput();
   setRevealed(isRevealed());
   setAutoSyncUi();
