@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { getOpeningBalance } from "../lib/balanceKv";
 import {
   getSheetsAccessToken,
   sheetsBatchGetMergeSafe,
@@ -27,7 +28,6 @@ import {
 } from "../lib/baoCaoTkReport";
 import {
   flexibleDateToIso,
-  normalizeBanDaoDataRow,
   normalizeCocDataRow,
   normalizeThuChiDataRow,
   num,
@@ -37,11 +37,9 @@ import {
 import { verifySession } from "../lib/session";
 
 const SHEETS = {
-  tong_quan: "TONG_QUAN",
   thu_chi: "THU_CHI",
   coc: "COC",
   cong_no: "CONG_NO",
-  ban_dao: "BAN_DAO",
   bao_cao_tk: "BAO_CAO_TK",
 } as const;
 
@@ -55,32 +53,6 @@ function todayIsoVietnam(): string {
   }).format(new Date());
 }
 
-function groupByDayMonth(rows: { day: string; amount: number }[]): {
-  byDay: { date: string; tong: number }[];
-  byMonth: { thang: string; tong: number }[];
-} {
-  const byDayMap = new Map<string, number>();
-  for (const r of rows) {
-    const day = flexibleDateToIso(r.day ?? "");
-    if (!day) continue;
-    byDayMap.set(day, (byDayMap.get(day) ?? 0) + (r.amount ?? 0));
-  }
-  const byMonthMap = new Map<string, number>();
-  for (const [day, total] of byDayMap) {
-    const iso = day.length >= 10 && day[4] === "-" ? day : flexibleDateToIso(day);
-    const m = iso.length >= 7 && iso[4] === "-" ? iso.slice(0, 7) : iso;
-    byMonthMap.set(m, (byMonthMap.get(m) ?? 0) + total);
-  }
-  return {
-    byDay: [...byDayMap.entries()]
-      .map(([date, tong]) => ({ date, tong }))
-      .sort((a, b) => a.date.localeCompare(b.date)),
-    byMonth: [...byMonthMap.entries()]
-      .map(([thang, tong]) => ({ thang, tong }))
-      .sort((a, b) => a.thang.localeCompare(b.thang)),
-  };
-}
-
 async function requireUser(env: Env, request: Request): Promise<Response | null> {
   const user = await verifySession(env, request.headers.get("Cookie"));
   if (!user) {
@@ -89,22 +61,15 @@ async function requireUser(env: Env, request: Request): Promise<Response | null>
   return null;
 }
 
-/** File chứa tab BAN_DAO (đơn dao). Mặc định DEBT_SALES nếu không set SPREADSHEET_ID_BAN_DAO. */
-function spreadsheetIdBanDao(env: Env): string {
-  const v = (env as { SPREADSHEET_ID_BAN_DAO?: string }).SPREADSHEET_ID_BAN_DAO?.trim();
-  return v || env.SPREADSHEET_ID_DEBT_SALES;
-}
-
 const DEFAULT_SPREADSHEET_ID_MAIN = "1IikVlW74zW54b6b7n1a0ko0MxIQsr_qMH6IR9XNtXpE";
 const DEFAULT_SPREADSHEET_ID_DEBT_SALES = "19ONokW6FyUFTX2RmIoGDJn8JmDeWlDsmT7AV_MN_SJM";
-const DEFAULT_SPREADSHEET_ID_BAN_DAO = "1VK8O24vkBy7gb2CThC4oeyUeafv-ybfXp_axRAbPBmI";
 const DEFAULT_SPREADSHEET_ID_CHAM_CONG = "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w";
 
 function spreadsheetIdMain(env: Env): string {
   return env.SPREADSHEET_ID_MAIN?.trim() || DEFAULT_SPREADSHEET_ID_MAIN;
 }
 
-function spreadsheetIdDebt(env: Env): string {
+function spreadsheetIdDebtSales(env: Env): string {
   return env.SPREADSHEET_ID_DEBT_SALES?.trim() || DEFAULT_SPREADSHEET_ID_DEBT_SALES;
 }
 
@@ -168,12 +133,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
 
     const idMain = spreadsheetIdMain(env);
-    const idDebt = spreadsheetIdDebt(env);
-    const idBanDao = spreadsheetIdBanDao(env);
+    const idDebt = spreadsheetIdDebtSales(env);
     const sheetErrors: { spreadsheetId: string; range: string; message: string }[] = [];
 
     const batchMainResult = await sheetsBatchGetMergeSafe(token, idMain, [
-      `'${SHEETS.tong_quan}'!A1:E2`,
       `'${SHEETS.thu_chi}'!A1:E2000`,
       `'${SHEETS.coc}'!A1:E2000`,
       `${quoteSheetTitle(HH_LOAI_TRU_TAB)}!A1:E500`,
@@ -206,37 +169,31 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[Sheets] ${idDebt} BAO_CAO_TK columns: ${msg}`);
     }
-    const batchBdResult = await sheetsBatchGetMergeSafe(token, idBanDao, [
-      `'${SHEETS.ban_dao}'!A1:G2000`,
-    ]);
-    sheetErrors.push(...batchBdResult.errors);
-    const batchBd = batchBdResult.data;
-
-    const tq = (batchMain[SHEETS.tong_quan] ?? []).map(stringifySheetRow);
     const tcBody = batchMain[SHEETS.thu_chi] ?? [];
     const cocRaw = batchMain[SHEETS.coc] ?? [];
     const cn = (batchDebtCn[SHEETS.cong_no] ?? []).map(stringifySheetRow);
-    const bdRaw = batchBd[SHEETS.ban_dao] ?? [];
-
-    const tqRow2 = tq[1] ?? [];
-    const a2 = tqRow2[0] ?? "";
-    const b2 = tqRow2[1] ?? "";
-    const c2 = tqRow2[2] ?? "";
-    const d2 = tqRow2[3] ?? "";
-    const e2 = tqRow2[4] ?? "";
 
     const thuChiData = tcBody.length > 1 ? tcBody.slice(1).map(normalizeThuChiDataRow) : [];
     const cocData =
       cocRaw.length > 1 ? parseRows(cocRaw.slice(1).map(normalizeCocDataRow), 5) : [];
     const congNoData = cn.length > 1 ? parseRows(cn.slice(1), 2) : [];
-    const banDaoData = bdRaw.length > 1 ? bdRaw.slice(1).map(normalizeBanDaoDataRow) : [];
+    const congNoNames = congNoData
+      .map((r) => String(r[0] ?? "").trim())
+      .filter((n) => n.length > 0);
 
     const sumCocB = cocData.reduce((s, r) => s + num(r[1]), 0);
     const sumCocC = cocData.reduce((s, r) => s + num(r[2]), 0);
     const sumCongNoB = congNoData.reduce((s, r) => s + num(r[1]), 0);
 
-    const duDauGoc = num(String(a2));
-    const bienDongSheetE2 = num(String(e2));
+    let sumThuChiThu = 0;
+    let sumThuChiChi = 0;
+    for (const r of thuChiData) {
+      sumThuChiThu += num(r[1]);
+      sumThuChiChi += num(r[2]);
+    }
+
+    const openingBalance = await getOpeningBalance(env.BALANCE_KV);
+    const balanceFluctuations = openingBalance + sumThuChiThu - sumThuChiChi;
 
     const byDay = new Map<string, { thu: number; chi: number }>();
     for (const r of thuChiData) {
@@ -268,16 +225,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
     const todayVn = todayIsoVietnam();
     const todayThuChi = byDay.get(todayVn) ?? { thu: 0, chi: 0 };
-    let tongBanDaoGHomNay = 0;
-    for (const r of banDaoData) {
-      const day = flexibleDateToIso((r[0] ?? "").trim());
-      if (day === todayVn) tongBanDaoGHomNay += num(r[6]);
-    }
-
-    /** Báo cáo bán dao: chỉ cộng cột G (Thành tiền). */
-    const banDaoTotals = groupByDayMonth(
-      banDaoData.map((r) => ({ day: r[0] ?? "", amount: num(r[6]) })),
-    );
 
     const { headerRow: baoCaoTkHeader, bodyRows: baoCaoTkBody } = findBaoCaoTkDataStart(baoCaoTkMerged);
     const baoCaoTkEntries = parseBaoCaoTkSheetRows(baoCaoTkBody, baoCaoTkHeader);
@@ -338,7 +285,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       console.error(`[Sheets] ty gia F2: ${msg}`);
     }
 
-    let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
+    let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig, congNoNames);
     try {
       const idChamCong = spreadsheetIdChamCong(env);
       await ensureTodayDateRowsAllTabs(token, idChamCong);
@@ -352,6 +299,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         hhLoaiTru,
         luongNvConfig,
         () => loadAttendanceSheets(token, idChamCong),
+        congNoNames,
       );
       reportLuongNv = buildLuongNvReport(
         attendanceSheets,
@@ -359,6 +307,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         todayVn,
         hhLoaiTru,
         luongNvConfig,
+        congNoNames,
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -371,13 +320,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
 
     return jsonResponse({
-      tongQuan: { a2, b2, c2, d2, e2 },
-      docTongQuan: {
-        sheet: SHEETS.tong_quan,
-        a2_soDuDau: {
-          raw: a2 === undefined || a2 === null ? "" : String(a2),
-          so: duDauGoc,
-        },
+      balance: {
+        value: openingBalance,
+        kvBound: Boolean(env.BALANCE_KV),
       },
       thuChi: thuChiData.map((r) => ({
         ngay: r[0],
@@ -393,21 +338,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         ghiChu: r[4],
       })),
       congNo: congNoData.map((r) => ({ ten: r[0], tienNo: r[1] })),
-      banDao: banDaoData.map((r) => ({
-        ngay: r[0],
-        ten: r[1],
-        diaChi: r[2],
-        sdt: r[3],
-        soLuong: r[4],
-        gia: r[5],
-        thanhTien: r[6],
-      })),
       computed: {
         tongCoc: sumCocC,
         nhanCoc: sumCocB,
         tongCongNo: sumCongNoB,
-        duDauNhap: duDauGoc,
-        bienDongE2: bienDongSheetE2,
+        duDauNhap: openingBalance,
+        balanceFluctuations,
+        sumThuChiThu,
+        sumThuChiChi,
       },
       report: {
         byDay: reportDays,
@@ -417,10 +355,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           tongThu: todayThuChi.thu,
           tongChi: todayThuChi.chi,
         },
-      },
-      reportBanDao: {
-        ...banDaoTotals,
-        todayVietnam: { date: todayVn, tong: tongBanDaoGHomNay },
       },
       baoCaoTk: baoCaoTkEntries.map((e) => ({
         ngay: e.ngay,
@@ -438,7 +372,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         spreadsheetIds: {
           main: idMain,
           debt: idDebt,
-          banDao: idBanDao,
           chamCong: spreadsheetIdChamCong(env),
         },
         errors: sheetErrors,
@@ -446,7 +379,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           thuChi: thuChiData.length,
           coc: cocData.length,
           congNo: congNoData.length,
-          banDao: banDaoData.length,
           hhLoaiTru: hhLoaiTru.length,
           luongNvEmployees: reportLuongNv.periods?.[0]?.employees?.length ?? 0,
         },

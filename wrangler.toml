@@ -3,13 +3,11 @@ name = "black-agency"
 compatibility_date = "2024-11-01"
 pages_build_output_dir = "public"
 
-# MAIN (1Iik…): TONG_QUAN, THU_CHI, COC, HH_LOAI_TRU (loại trừ HH Lương NV). CONG_NO trên DEBT_SALES (19ON…).
-# SPREADSHEET_ID_BAN_DAO: file tab BAN_DAO (báo cáo bán dao). BAO_CAO_TK nằm trên DEBT_SALES (bot nhóm -1003992397667).
+# MAIN (1Iik…): THU_CHI, COC, HH_LOAI_TRU. CONG_NO + BAO_CAO_TK trên DEBT_SALES (19ON…).
 
 [vars]
 SPREADSHEET_ID_MAIN = "1IikVlW74zW54b6b7n1a0ko0MxIQsr_qMH6IR9XNtXpE"
 SPREADSHEET_ID_DEBT_SALES = "19ONokW6FyUFTX2RmIoGDJn8JmDeWlDsmT7AV_MN_SJM"
-SPREADSHEET_ID_BAN_DAO = "1VK8O24vkBy7gb2CThC4oeyUeafv-ybfXp_axRAbPBmI"
 SPREADSHEET_ID_CHAM_CONG = "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w"
 # File chấm công: tab mẫu SUBEO, F2 tỉ giá VND/USD (=GOOGLEFINANCE)
 ADMIN_USERNAME = "Black7777"
@@ -21,7 +19,6 @@ ADMIN_USERNAME = "Black7777"
 # TELEGRAM_BOT_TOKEN=...          (bot webhook Thu chi / Cọc / Công nợ …)
 # TELEGRAM_LUONG_NV_BOT_TOKEN=...  (bot @Blackcorp7777_bot — gửi bảng lương nhóm Nội Bộ)
 # TELEGRAM_WEBHOOK_SECRET=... (tuỳ chọn; khớp khi gọi setWebhook)
-# TELEGRAM_BAN_DAO_CHAT_ID=-5091396609
 # TELEGRAM_BAO_CAO_CHAT_ID=-1003992397667
 # TELEGRAM_NOI_BO_CHAT_ID=-1003978420142
 
@@ -29,3 +26,11 @@ ADMIN_USERNAME = "Black7777"
 # Đặt LUONG_NV_CRON_SECRET, rồi dùng cron-job.org gọi:
 # GET https://<domain>/api/luong-nv-cron?secret=<LUONG_NV_CRON_SECRET>
 # Lịch: 0 8 1 * * (08:00 UTC = 15:00 GMT+7)
+
+# KV lưu Balance (số dư đầu)
+# 1. Cloudflare Dashboard → Workers & Pages → KV → Create namespace (vd. black-agency-balance)
+# 2. Copy Namespace ID, thay YOUR_KV_NAMESPACE_ID bên dưới
+# 3. Push GitHub → Cloudflare tự bind (Dashboard không cho thêm vì dùng wrangler.toml)
+[[kv_namespaces]]
+binding = "BALANCE_KV"
+id = "8a2dff58b97c4504a94041d05a39b22a"

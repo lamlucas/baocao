@@ -1,7 +1,6 @@
 import type { Env } from "../env";
 import { getSheetsAccessToken, sheetsBatchGet, sheetsBatchGetMergeSafe, sheetsBatchUpdate, sheetsValuesAppend } from "../lib/google";
 import {
-  buildBanDaoAppendRow,
   buildCocAppendRows,
   buildCongNoAppendRows,
   buildThuChiAppendRow,
@@ -16,30 +15,18 @@ const SHEET_TQ = "TONG_QUAN";
 const SHEET_TC = "THU_CHI";
 const SHEET_COC = "COC";
 const SHEET_CN = "CONG_NO";
-const SHEET_BAN_DAO = "BAN_DAO";
 const SHEET_BAO_CAO_TK = "BAO_CAO_TK";
 
 const CHAT_THU_CHI_DEFAULT = "-1003727898214";
-const CHAT_BAN_DAO_DEFAULT = "-5091396609";
 const CHAT_BAO_CAO_DEFAULT = "-1003992397667";
 
 function thuChiChatId(env: Env): string {
   const v = (env as { TELEGRAM_THU_CHI_CHAT_ID?: string }).TELEGRAM_THU_CHI_CHAT_ID;
   return (v && String(v).trim()) || CHAT_THU_CHI_DEFAULT;
 }
-function banDaoChatId(env: Env): string {
-  const v = (env as { TELEGRAM_BAN_DAO_CHAT_ID?: string }).TELEGRAM_BAN_DAO_CHAT_ID;
-  return (v && String(v).trim()) || CHAT_BAN_DAO_DEFAULT;
-}
 function baoCaoChatId(env: Env): string {
   const v = (env as { TELEGRAM_BAO_CAO_CHAT_ID?: string }).TELEGRAM_BAO_CAO_CHAT_ID;
   return (v && String(v).trim()) || CHAT_BAO_CAO_DEFAULT;
-}
-
-/** File chứa tab BAN_DAO (đơn dao). */
-function spreadsheetIdBanDao(env: Env): string {
-  const v = (env as { SPREADSHEET_ID_BAN_DAO?: string }).SPREADSHEET_ID_BAN_DAO?.trim();
-  return v || env.SPREADSHEET_ID_DEBT_SALES;
 }
 
 /** THU: số - ghi chú / CHI: số - ghi chú */
@@ -137,55 +124,6 @@ function parseCongNoMessage(text: string): { pairs: { name: string; amountStr: s
     pairs.push({ name, amountStr });
   }
   return pairs.length ? { pairs } : null;
-}
-
-type BanDaoFields = {
-  ten: string;
-  diaChi: string;
-  sdt: string;
-  soLuong: string;
-  gia: string;
-  thanhTien: string;
-};
-
-/** Mỗi dòng dạng TÊN: …, ĐỊA CHỈ: … (nhóm Báo Đơn Dao US). */
-function parseBanDaoMessage(text: string): BanDaoFields | null {
-  const out: BanDaoFields = { ten: "", diaChi: "", sdt: "", soLuong: "", gia: "", thanhTien: "" };
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  for (const line of lines) {
-    let m = line.match(/^\s*TÊN\s*:\s*(.+)$/i);
-    if (m) {
-      out.ten = m[1]!.trim();
-      continue;
-    }
-    m = line.match(/^\s*ĐỊA\s*CHỈ\s*:\s*(.+)$/i);
-    if (m) {
-      out.diaChi = m[1]!.trim();
-      continue;
-    }
-    m = line.match(/^\s*SỐ\s*ĐIỆN\s*THOẠI\s*:\s*(.+)$/i);
-    if (m) {
-      out.sdt = m[1]!.trim();
-      continue;
-    }
-    m = line.match(/^\s*SỐ\s*LƯỢNG\s*:\s*(.+)$/i);
-    if (m) {
-      out.soLuong = m[1]!.trim();
-      continue;
-    }
-    m = line.match(/^\s*GIÁ\s*:\s*(.+)$/i);
-    if (m) {
-      out.gia = m[1]!.trim();
-      continue;
-    }
-    m = line.match(/^\s*THÀNH\s*TIỀN\s*:\s*(.+)$/i);
-    if (m) {
-      out.thanhTien = m[1]!.trim();
-      continue;
-    }
-  }
-  const has = `${out.ten}${out.diaChi}${out.sdt}${out.soLuong}${out.gia}${out.thanhTien}`.trim();
-  return has ? out : null;
 }
 
 function parseBaoCaoMessage(text: string): {
@@ -427,32 +365,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const msgErr = e instanceof Error ? e.message : String(e);
       console.error("telegram thu_chi_forward", msgErr);
       await telegramSendMessage(botToken, chatId, `Lỗi ghi Sheet: ${msgErr}`);
-      return Response.json({ ok: false, error: msgErr }, { status: 500 });
-    }
-  }
-
-  if (sid === banDaoChatId(env)) {
-    const fields = parseBanDaoMessage(text);
-    if (!fields) {
-      await telegramSendMessage(
-        botToken,
-        chatId,
-        "Gửi đơn theo từng dòng:\nTÊN: …\nĐỊA CHỈ: …\nSỐ ĐIỆN THOẠI: …\nSỐ LƯỢNG: …\nGIÁ: …\nTHÀNH TIỀN: …",
-      );
-      return Response.json({ ok: true, ignored: true });
-    }
-    try {
-      const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
-      const idBd = spreadsheetIdBanDao(env);
-      const ngay = formatNgayFromTelegram(unix);
-      const newRow = buildBanDaoAppendRow(ngay, fields);
-      await sheetsValuesAppend(token, idBd, `'${SHEET_BAN_DAO}'!A:G`, [newRow], "USER_ENTERED");
-      await telegramSendMessage(botToken, chatId, "Đã thêm 1 dòng vào BAN_DAO (append — không ghi đè định dạng cũ).");
-      return Response.json({ ok: true, kind: "ban_dao" });
-    } catch (e) {
-      const msgErr = e instanceof Error ? e.message : String(e);
-      console.error("telegram ban_dao", msgErr);
-      await telegramSendMessage(botToken, chatId, `Lỗi ghi BAN_DAO: ${msgErr}`);
       return Response.json({ ok: false, error: msgErr }, { status: 500 });
     }
   }

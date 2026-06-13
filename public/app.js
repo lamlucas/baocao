@@ -26,16 +26,13 @@ function fmtVnd(n) {
 }
 
 const state = {
-  tongQuan: { a2: "", b2: "", c2: "", d2: "", e2: "" },
-  docTongQuan: null,
+  balance: { value: 0, kvBound: false },
   thuChi: [],
   coc: [],
   congNo: [],
-  banDao: [],
   baoCaoTk: [],
   computed: null,
   report: { byDay: [], byMonth: [], todayVietnam: null },
-  reportBanDao: { byDay: [], byMonth: [], todayVietnam: null },
   reportChiTieu: { byDay: [], byMonth: [], todayVietnam: null, nguonList: [] },
   reportLuongNv: { todayVietnam: "", currentMonth: "", previousMonth: "", periods: [] },
   hhLoaiTru: [],
@@ -46,8 +43,6 @@ const state = {
   reportThuChiNav: { month: "", day: "" },
   reportThuChiMode: "monthly",
   reportThuChiNguonFilter: "",
-  reportBanDaoNav: { month: "", day: "" },
-  banDaoPanelNav: { month: "", day: "" },
   chiTieuNav: { month: "", day: "" },
   chiTieuNguonFilter: "",
 };
@@ -72,17 +67,6 @@ function rowCoc(r) {
 function rowCongNo(r) {
   return { ten: r.ten ?? "", tienNo: r.tienNo ?? "" };
 }
-function rowBanDao(r) {
-  return {
-    ngay: r.ngay ?? "",
-    ten: r.ten ?? r.tenKh ?? "",
-    diaChi: r.diaChi ?? "",
-    sdt: r.sdt ?? "",
-    soLuong: r.soLuong ?? "",
-    gia: r.gia ?? "",
-    thanhTien: r.thanhTien ?? r.tienUs ?? "",
-  };
-}
 function rowBaoCaoTk(r) {
   return {
     ngay: r.ngay ?? "",
@@ -100,6 +84,7 @@ const AUTO_SYNC_KEY = "bc_auto_sync";
 const LAST_SIG_KEY = "bc_payload_sig";
 
 let pollTimer = null;
+let balanceSaveTimer = null;
 let toolbarBound = false;
 
 function isRevealed() {
@@ -161,7 +146,6 @@ const TAB_LABELS = {
   coc: "Tiền cọc",
   cong_no: "Công nợ",
   chi_tieu: "Chi tiêu",
-  ban_dao: "Bán dao",
   luong_nv: "Lương NV",
   bao_cao: "Báo cáo",
 };
@@ -558,165 +542,6 @@ function renderReportThuChiToday() {
   renderThuChiDetailTable($("#table-report-tc-today tbody"), rows);
 }
 
-function banDaoRowDayIso(r) {
-  return flexibleDateToIsoClient(r.ngay);
-}
-
-function banDaoRowHasData(r) {
-  return Boolean(
-    String(r.ten ?? "").trim() ||
-      String(r.diaChi ?? "").trim() ||
-      String(r.sdt ?? "").trim() ||
-      parseNumClient(r.soLuong) ||
-      parseNumClient(r.gia) ||
-      parseNumClient(r.thanhTien),
-  );
-}
-
-function banDaoRowsForDay(isoDay) {
-  return state.banDao.filter((r) => banDaoRowDayIso(r) === isoDay && banDaoRowHasData(r));
-}
-
-function sumBanDaoRows(rows) {
-  let tong = 0;
-  for (const r of rows) tong += parseNumClient(r.thanhTien);
-  return tong;
-}
-
-function renderBanDaoDetailTable(tbodyEl, rows) {
-  if (!tbodyEl) return;
-  tbodyEl.innerHTML = "";
-  if (rows.length === 0) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="6" class="muted">Không có đơn trong ngày này.</td>`;
-    tbodyEl.appendChild(tr);
-    return;
-  }
-  for (const r of rows) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="cell-readonly">${escapeHtml(r.ten ?? "")}</td>
-      <td class="cell-readonly">${escapeHtml(r.diaChi ?? "")}</td>
-      <td class="cell-readonly">${escapeHtml(r.sdt ?? "")}</td>
-      <td class="cell-readonly cell-num">${escapeHtml(String(r.soLuong ?? ""))}</td>
-      <td class="cell-readonly cell-num">${cellMoneyDisplay(r.gia)}</td>
-      <td class="cell-readonly cell-num">${cellMoneyDisplay(r.thanhTien)}</td>`;
-    tbodyEl.appendChild(tr);
-  }
-}
-
-/** @param {"reportBanDaoNav"|"banDaoPanelNav"} navStateKey */
-function renderBanDaoDrill(navStateKey, ui) {
-  const nav = state[navStateKey];
-  if (!nav) return;
-  const { month, day } = nav;
-
-  const wrapMonths = $(ui.wrapMonths);
-  const wrapDays = $(ui.wrapDays);
-  const wrapDetail = $(ui.wrapDetail);
-  if (!wrapMonths || !wrapDays || !wrapDetail) return;
-
-  wrapMonths.hidden = Boolean(month);
-  wrapDays.hidden = !month || Boolean(day);
-  wrapDetail.hidden = !day;
-
-  const tbMonth = $(ui.tableMonth + " tbody");
-  if (!month && tbMonth) {
-    tbMonth.innerHTML = "";
-    const months = [...(state.reportBanDao?.byMonth ?? [])].sort((a, b) =>
-      String(b.thang).localeCompare(String(a.thang)),
-    );
-    for (const r of months) {
-      const tr = document.createElement("tr");
-      tr.className = ui.rowClass;
-      tr.dataset.month = String(r.thang);
-      tr.innerHTML = `
-        <td>${escapeHtml(formatMonthForDisplay(r.thang))}</td>
-        <td class="cell-num">${fmtMoney(r.tong ?? 0)}</td>`;
-      tbMonth.appendChild(tr);
-    }
-  }
-
-  const monthLabel = $(ui.monthLabel);
-  if (monthLabel) monthLabel.textContent = month ? formatMonthForDisplay(month) : "—";
-
-  const tbDays = $(ui.tableDays + " tbody");
-  if (month && !day && tbDays) {
-    tbDays.innerHTML = "";
-    const days = (state.reportBanDao?.byDay ?? [])
-      .filter((r) => String(r.date).startsWith(`${month}-`))
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    for (const r of days) {
-      const tr = document.createElement("tr");
-      tr.className = ui.rowClass;
-      tr.dataset.day = String(r.date);
-      tr.innerHTML = `
-        <td>${escapeHtml(formatDayForDisplay(r.date))}</td>
-        <td class="cell-num">${fmtMoney(r.tong ?? 0)}</td>`;
-      tbDays.appendChild(tr);
-    }
-  }
-
-  const dayLabel = $(ui.dayLabel);
-  if (dayLabel) dayLabel.textContent = day ? formatDayForDisplay(day) : "—";
-
-  if (day) {
-    const rows = banDaoRowsForDay(day);
-    const totals = sumBanDaoRows(rows);
-    const repFromApi = (state.reportBanDao?.byDay ?? []).find((r) => r.date === day);
-    const tong = typeof repFromApi?.tong === "number" && Number.isFinite(repFromApi.tong)
-      ? repFromApi.tong
-      : totals;
-    const elTotal = $(ui.dayTotal);
-    if (elTotal) elTotal.textContent = `Tổng thành tiền: ${fmtMoney(tong)}`;
-    renderBanDaoDetailTable($(ui.tableDetail + " tbody"), rows);
-  }
-}
-
-function setReportBanDaoNav(month, day) {
-  state.reportBanDaoNav = { month: month || "", day: day || "" };
-  renderBanDaoDrill("reportBanDaoNav", REPORT_BD_UI);
-}
-
-function setBanDaoPanelNav(month, day) {
-  state.banDaoPanelNav = { month: month || "", day: day || "" };
-  renderBanDaoDrill("banDaoPanelNav", BAN_DAO_PANEL_UI);
-}
-
-const REPORT_BD_UI = {
-  wrapMonths: "#wrap-report-bd-months",
-  wrapDays: "#wrap-report-bd-days",
-  wrapDetail: "#wrap-report-bd-detail",
-  tableMonth: "#table-report-bd-month",
-  tableDays: "#table-report-bd-days",
-  tableDetail: "#table-report-bd-detail",
-  monthLabel: "#report-bd-month-label",
-  dayLabel: "#report-bd-day-label",
-  dayTotal: "#report-bd-day-total",
-  rowClass: "report-bd-click-row",
-};
-
-const BAN_DAO_PANEL_UI = {
-  wrapMonths: "#wrap-bandao-panel-months",
-  wrapDays: "#wrap-bandao-panel-days",
-  wrapDetail: "#wrap-bandao-panel-detail",
-  tableMonth: "#table-bandao-panel-month",
-  tableDays: "#table-bandao-panel-days",
-  tableDetail: "#table-bandao-panel-detail",
-  monthLabel: "#bandao-panel-month-label",
-  dayLabel: "#bandao-panel-day-label",
-  dayTotal: "#bandao-panel-day-total",
-  rowClass: "report-bd-click-row",
-};
-
-function renderReportBanDaoDrill() {
-  renderBanDaoDrill("reportBanDaoNav", REPORT_BD_UI);
-}
-
-function renderBanDaoPanelDrill() {
-  renderBanDaoDrill("banDaoPanelNav", BAN_DAO_PANEL_UI);
-}
-
 function chiTieuSameCalendarMonth(ngay, monthIso) {
   if (!ngay || !monthIso || String(ngay).length < 7 || String(monthIso).length < 7) return false;
   return String(ngay).slice(5, 7) === String(monthIso).slice(5, 7);
@@ -1079,19 +904,6 @@ function renderChiTieuDrill() {
   renderChiTieuByNguonFilter();
 }
 
-function renderReportBanDaoToday() {
-  const tv = state.reportBanDao?.todayVietnam;
-  const iso = tv?.date ?? todayIsoVietnam();
-  const rows = banDaoRowsForDay(iso);
-  const totals = sumBanDaoRows(rows);
-  const tong = typeof tv?.tong === "number" && Number.isFinite(tv.tong) ? tv.tong : totals;
-  const lbl = $("#report-bd-today-label");
-  const el = $("#report-bd-today-total");
-  if (lbl) lbl.textContent = formatDayForDisplay(iso);
-  if (el) el.textContent = `Tổng thành tiền: ${fmtMoney(tong)}`;
-  renderBanDaoDetailTable($("#table-report-bd-today tbody"), rows);
-}
-
 function cellMoneyDisplay(raw) {
   if (raw == null || raw === "") return "—";
   if (typeof raw === "number" && Number.isFinite(raw)) return fmtMoney(raw);
@@ -1130,34 +942,20 @@ function renderCoc() {
   });
 }
 
-function renderBanDaoDetail() {
-  const tb = tbody("table-ban-dao");
-  if (!tb) return;
-  tb.innerHTML = "";
-  for (const r of state.banDao) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="cell-readonly">${escapeHtml(formatDayForDisplay(r.ngay ?? ""))}</td>
-      <td class="cell-readonly">${escapeHtml(r.ten ?? "")}</td>
-      <td class="cell-readonly">${escapeHtml(r.diaChi ?? "")}</td>
-      <td class="cell-readonly">${escapeHtml(r.sdt ?? "")}</td>
-      <td class="cell-readonly cell-num">${escapeHtml(String(r.soLuong ?? ""))}</td>
-      <td class="cell-readonly cell-num">${cellMoneyDisplay(r.gia)}</td>
-      <td class="cell-readonly cell-num">${cellMoneyDisplay(r.thanhTien)}</td>`;
-    tb.appendChild(tr);
-  }
-}
-
 function renderCongNo() {
   const tb = tbody("table-cong-no");
   tb.innerHTML = "";
+  let sumNo = 0;
   state.congNo.forEach((r) => {
+    sumNo += parseNumClient(r.tienNo);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="cell-readonly">${escapeHtml(r.ten ?? "")}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.tienNo)}</td>`;
     tb.appendChild(tr);
   });
+  const totalEl = $("#cong-no-total");
+  if (totalEl) totalEl.textContent = `Tổng công nợ: ${fmtMoney(sumNo)}`;
 }
 
 function hhLoaiTruAmountCell(row, kind) {
@@ -1525,7 +1323,7 @@ function renderLuongNv() {
       const exclChi = cb.chiExcludedHhLoaiTru ?? 0;
       const exclTotal = cb.thuExcluded ?? exclCongNo + exclThu;
       const exclParts = [];
-      if (exclCongNo > 0) exclParts.push(`công nợ ROKER/GM: ${cellMoneyDisplay(exclCongNo)}`);
+      if (exclCongNo > 0) exclParts.push(`trả công nợ: ${cellMoneyDisplay(exclCongNo)}`);
       if (exclThu > 0) exclParts.push(`loại thu: ${cellMoneyDisplay(exclThu)}`);
       if (exclChi > 0) exclParts.push(`loại chi: ${cellMoneyDisplay(exclChi)}`);
       const filterTab = (state.selectedChamCongNvTab || "").trim();
@@ -1654,7 +1452,7 @@ function capNhatHienThiSoDuDauDoc() {
   }
   const raw = ($("#tq-a2")?.value ?? "").trim();
   if (!raw) {
-    valEl.textContent = "Chưa có dữ liệu — ô A2 trên TONG_QUAN đang trống.";
+    valEl.textContent = "Chưa nhập Balance — nhập số dư đầu (lưu trên KV).";
     if (rawEl) {
       rawEl.hidden = true;
       rawEl.textContent = "";
@@ -1664,14 +1462,8 @@ function capNhatHienThiSoDuDauDoc() {
   const n = parseNumClient($("#tq-a2").value);
   valEl.textContent = fmtMoney(n);
   if (rawEl) {
-    const fromApi = state.docTongQuan?.a2_soDuDau?.raw;
-    if (fromApi != null && String(fromApi).trim() !== raw) {
-      rawEl.hidden = false;
-      rawEl.textContent = `Giá trị gốc trên Sheet (lần tải gần nhất): ${fromApi}`;
-    } else {
-      rawEl.hidden = true;
-      rawEl.textContent = "";
-    }
+    rawEl.hidden = true;
+    rawEl.textContent = "";
   }
 }
 
@@ -1692,9 +1484,14 @@ function capNhatHienThiBienDong() {
 
 function refreshComputedFromClient() {
   const duDau = parseNumClient($("#tq-a2").value);
-  const bienDongTuSheet = parseNumClient(String($("#tq-e2")?.value ?? "").trim() || "0");
+  let sumThu = 0;
+  let sumChi = 0;
   let sumCocB = 0;
   let sumCocC = 0;
+  for (const r of state.thuChi) {
+    sumThu += parseNumClient(r.thu);
+    sumChi += parseNumClient(r.chi);
+  }
   for (const r of state.coc) {
     sumCocB += parseNumClient(r.thu);
     sumCocC += parseNumClient(r.chi);
@@ -1703,6 +1500,8 @@ function refreshComputedFromClient() {
   for (const r of state.congNo) {
     sumNo += parseNumClient(r.tienNo);
   }
+  const balanceFluctuations = duDau + sumThu - sumChi;
+  $("#tq-e2").value = fmtMoney(balanceFluctuations);
   $("#tq-b2").value = fmtMoney(sumCocC);
   $("#tq-c2").value = fmtMoney(sumCocB);
   $("#tq-d2").value = fmtMoney(sumNo);
@@ -1711,20 +1510,38 @@ function refreshComputedFromClient() {
     nhanCoc: sumCocB,
     tongCongNo: sumNo,
     duDauNhap: duDau,
-    bienDongE2: bienDongTuSheet,
+    balanceFluctuations,
+    sumThuChiThu: sumThu,
+    sumThuChiChi: sumChi,
   };
   renderReport();
   capNhatHienThiSoDuDauDoc();
   capNhatHienThiBienDong();
 }
 
+async function saveBalanceToKv() {
+  if (!isRevealed()) return;
+  const raw = ($("#tq-a2")?.value ?? "").trim();
+  if (!raw) return;
+  try {
+    await api("/api/balance", {
+      method: "PUT",
+      body: JSON.stringify({ balance: parseNumClient(raw) }),
+    });
+  } catch {
+    /* giữ im lặng — user có thể thử lại khi sửa */
+  }
+}
+
+function scheduleBalanceSave() {
+  clearTimeout(balanceSaveTimer);
+  balanceSaveTimer = setTimeout(() => void saveBalanceToKv(), 800);
+}
+
 function renderReport() {
   populateReportThuChiNguonFilter();
   renderReportThuChiDrill();
   renderReportThuChiToday();
-  renderReportBanDaoDrill();
-  renderReportBanDaoToday();
-  renderBanDaoPanelDrill();
   populateChiTieuNguonFilter();
   renderChiTieuToday();
   renderChiTieuDrill();
@@ -1740,12 +1557,10 @@ function escapeHtml(s) {
 function applyPayload(data, options = {}) {
   const { preserveHhLoaiTru = false } = options;
   syncSensitiveRevealClass();
-  state.tongQuan = data.tongQuan ?? state.tongQuan;
-  state.docTongQuan = data.docTongQuan ?? null;
+  state.balance = data.balance ?? { value: 0, kvBound: false };
   state.thuChi = (data.thuChi ?? []).map(rowThuChi);
   state.coc = (data.coc ?? []).map(rowCoc);
   state.congNo = (data.congNo ?? []).map(rowCongNo);
-  state.banDao = (data.banDao ?? []).map(rowBanDao);
   state.baoCaoTk = (data.baoCaoTk ?? []).map(rowBaoCaoTk);
   state.computed = data.computed ?? null;
   state.report = {
@@ -1753,7 +1568,6 @@ function applyPayload(data, options = {}) {
     byMonth: data.report?.byMonth ?? [],
     todayVietnam: data.report?.todayVietnam ?? null,
   };
-  state.reportBanDao = data.reportBanDao ?? { byDay: [], byMonth: [], todayVietnam: null };
   state.reportChiTieu = data.reportChiTieu ?? {
     byDay: [],
     byMonth: [],
@@ -1770,13 +1584,8 @@ function applyPayload(data, options = {}) {
     state.hhLoaiTru = data.hhLoaiTru ?? [];
   }
 
-  $("#tq-a2").value = state.tongQuan.a2 ?? "";
-  $("#tq-b2").value = state.tongQuan.b2 ? String(state.tongQuan.b2) : "";
-  $("#tq-c2").value = state.tongQuan.c2 ? String(state.tongQuan.c2) : "";
-  $("#tq-e2").value =
-    state.tongQuan.e2 !== undefined && state.tongQuan.e2 !== null && String(state.tongQuan.e2) !== ""
-      ? String(state.tongQuan.e2)
-      : "";
+  const bal = state.balance?.value;
+  $("#tq-a2").value = bal != null && Number.isFinite(bal) ? String(bal) : "";
 
   sessionStorage.setItem(LAST_SIG_KEY, JSON.stringify(data));
   showSheetDiagnostics(data.sheetDiagnostics);
@@ -1784,7 +1593,6 @@ function applyPayload(data, options = {}) {
   renderThuChi();
   renderCoc();
   renderCongNo();
-  renderBanDaoDetail();
   renderLuongNv();
   refreshComputedFromClient();
   void loadChamCongNvTabs();
@@ -1849,8 +1657,7 @@ function showSheetDiagnostics(diag) {
   const allEmpty =
     (counts.thuChi ?? 0) === 0 &&
     (counts.coc ?? 0) === 0 &&
-    (counts.congNo ?? 0) === 0 &&
-    (counts.banDao ?? 0) === 0;
+    (counts.congNo ?? 0) === 0;
   if (!errors.length && !allEmpty) return;
   if (errors.length) {
     const first = errors[0];
@@ -1972,36 +1779,6 @@ function bindToolbarAfterLogin() {
     setReportThuChiNav("", "");
   });
 
-  $("#table-report-bd-month")?.addEventListener("click", (ev) => {
-    const tr = ev.target.closest("tr.report-bd-click-row");
-    if (!tr?.dataset.month) return;
-    setReportBanDaoNav(tr.dataset.month, "");
-  });
-  $("#table-report-bd-days")?.addEventListener("click", (ev) => {
-    const tr = ev.target.closest("tr.report-bd-click-row");
-    if (!tr?.dataset.day) return;
-    setReportBanDaoNav(state.reportBanDaoNav.month, tr.dataset.day);
-  });
-  $("#btn-report-bd-back-month")?.addEventListener("click", () => setReportBanDaoNav("", ""));
-  $("#btn-report-bd-back-days")?.addEventListener("click", () =>
-    setReportBanDaoNav(state.reportBanDaoNav.month, ""),
-  );
-
-  $("#table-bandao-panel-month")?.addEventListener("click", (ev) => {
-    const tr = ev.target.closest("tr.report-bd-click-row");
-    if (!tr?.dataset.month) return;
-    setBanDaoPanelNav(tr.dataset.month, "");
-  });
-  $("#table-bandao-panel-days")?.addEventListener("click", (ev) => {
-    const tr = ev.target.closest("tr.report-bd-click-row");
-    if (!tr?.dataset.day) return;
-    setBanDaoPanelNav(state.banDaoPanelNav.month, tr.dataset.day);
-  });
-  $("#btn-bandao-panel-back-month")?.addEventListener("click", () => setBanDaoPanelNav("", ""));
-  $("#btn-bandao-panel-back-days")?.addEventListener("click", () =>
-    setBanDaoPanelNav(state.banDaoPanelNav.month, ""),
-  );
-
   $("#chi-tieu-nguon-filter")?.addEventListener("change", (ev) => {
     state.chiTieuNguonFilter = ev.target.value || "";
     setChiTieuNav(state.chiTieuNav.month, state.chiTieuNav.day);
@@ -2025,8 +1802,12 @@ function bindToolbarAfterLogin() {
 }
 
 function bindOverviewInput() {
-  $("#tq-a2")?.addEventListener("input", refreshComputedFromClient);
-  $("#tq-a2")?.addEventListener("change", refreshComputedFromClient);
+  const onBalanceInput = () => {
+    refreshComputedFromClient();
+    scheduleBalanceSave();
+  };
+  $("#tq-a2")?.addEventListener("input", onBalanceInput);
+  $("#tq-a2")?.addEventListener("change", onBalanceInput);
 }
 
 async function main() {

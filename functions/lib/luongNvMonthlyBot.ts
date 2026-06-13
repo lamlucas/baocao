@@ -19,7 +19,7 @@ import {
   sheetsBatchGetMergeSafe,
   sheetsListTabTitles,
 } from "./google";
-import { normalizeThuChiDataRow } from "./thuChiSheet";
+import { flexibleDateToIso, normalizeThuChiDataRow, num, parseRows, stringifySheetRow } from "./thuChiSheet";
 import { telegramSendMessage } from "./telegramSend";
 
 const CHAT_NOI_BO_DEFAULT = "-1003978420142";
@@ -117,6 +117,7 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
 
   const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const idMain = env.SPREADSHEET_ID_MAIN;
+  const idDebt = env.SPREADSHEET_ID_DEBT_SALES;
   const idChamCong = spreadsheetIdChamCong(env);
   const todayVn = todayIsoVietnam();
 
@@ -124,6 +125,12 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     `'THU_CHI'!A1:E2000`,
     `${quoteSheetTitle(HH_LOAI_TRU_TAB)}!A1:E500`,
   ]);
+  const batchDebtCn = await sheetsBatchGetMergeSafe(token, idDebt, [`'CONG_NO'!A1:B2000`]);
+  const cn = (batchDebtCn.data["CONG_NO"] ?? []).map(stringifySheetRow);
+  const congNoData = cn.length > 1 ? parseRows(cn.slice(1), 2) : [];
+  const congNoNames = congNoData
+    .map((r) => String(r[0] ?? "").trim())
+    .filter((n) => n.length > 0);
   const tcBody = batchMain.data["THU_CHI"] ?? [];
   const thuChiData = tcBody.length > 1 ? tcBody.slice(1).map(normalizeThuChiDataRow) : [];
   const thuChiModels = thuChiData.map((r) => ({
@@ -183,9 +190,17 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     hhLoaiTru,
     luongNvConfig,
     () => loadAttendanceSheets(token, idChamCong),
+    congNoNames,
   );
 
-  const report = buildLuongNvReport(attendanceSheets, thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
+  const report = buildLuongNvReport(
+    attendanceSheets,
+    thuChiModels,
+    todayVn,
+    hhLoaiTru,
+    luongNvConfig,
+    congNoNames,
+  );
   const previousPeriod = report.periods.find((p) => p.kind === "previous");
   if (!previousPeriod) {
     console.error("[luongNvMonthlyBot] Không có kỳ tháng trước");
