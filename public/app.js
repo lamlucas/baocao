@@ -102,7 +102,14 @@ function setRevealed(v) {
   else sessionStorage.removeItem(REVEAL_KEY);
   syncSensitiveRevealClass();
   const gridBal = $("#grid-balance-edit");
-  if (gridBal) gridBal.hidden = !v;
+  if (gridBal) {
+    gridBal.hidden = !v;
+    gridBal.classList.remove("grid-balance-reveal--animate");
+    if (v) {
+      void gridBal.offsetWidth;
+      gridBal.classList.add("grid-balance-reveal--animate");
+    }
+  }
   $("#btn-reveal-balance").hidden = v;
   $("#btn-hide-balance").hidden = !v;
   renderThuChi();
