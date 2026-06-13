@@ -438,6 +438,63 @@ body {
   display: none !important;
 }
 
+.reveal-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.reveal-modal-backdrop[hidden] {
+  display: none !important;
+}
+
+.reveal-modal {
+  position: fixed;
+  z-index: 61;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(22rem, calc(100vw - 2rem));
+  background: rgba(16, 22, 34, 0.98);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(61, 214, 198, 0.28);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.55), var(--hover-glow);
+  padding: 1.35rem 1.5rem 1.25rem;
+  animation: menu-in 0.22s var(--hover-ease);
+}
+
+.reveal-modal[hidden] {
+  display: none !important;
+}
+
+.reveal-modal-title {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.reveal-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.reveal-modal-field {
+  margin: 0;
+}
+
+.reveal-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
 .app-menu-nav {
   display: flex;
   flex-direction: column;
@@ -617,10 +674,18 @@ body {
   margin: 0.5rem 0 0;
 }
 
+.du-dau-balance-block {
+  margin-bottom: 0.5rem;
+}
+
+.du-dau-balance-block .grid-balance-reveal {
+  margin: 0 0 0.85rem;
+}
+
 .du-dau-actions {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.85rem;
+  margin-top: 0;
   flex-wrap: wrap;
 }
 

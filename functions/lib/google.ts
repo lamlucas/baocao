@@ -203,6 +203,30 @@ export async function sheetsBatchUpdate(
 }
 
 /** Chèn dòng mới cuối bảng (không ghi đè vùng cũ → giữ định dạng ô đã cài). */
+/** sheetId (numeric) của tab theo tên — dùng deleteDimension, duplicateSheet, … */
+export async function sheetsGetSheetIdByTitle(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetTitle: string,
+): Promise<number | null> {
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(title,sheetId)`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`spreadsheets.get sheetId ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as {
+    sheets?: { properties?: { title?: string; sheetId?: number } }[];
+  };
+  const want = sheetTitle.trim();
+  for (const sh of json.sheets ?? []) {
+    if (String(sh.properties?.title ?? "").trim() === want) {
+      const id = sh.properties?.sheetId;
+      return id == null ? null : id;
+    }
+  }
+  return null;
+}
+
 /** Danh sách tên tab (sheet) trong file Google Spreadsheet. */
 export async function sheetsListTabTitles(
   accessToken: string,

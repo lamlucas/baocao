@@ -101,18 +101,10 @@ function setRevealed(v) {
   if (v) sessionStorage.setItem(REVEAL_KEY, "1");
   else sessionStorage.removeItem(REVEAL_KEY);
   syncSensitiveRevealClass();
-  const inp = $("#tq-a2");
-  if (inp) inp.type = v ? "text" : "password";
-  const e2inp = $("#tq-e2");
-  if (e2inp) e2inp.type = v ? "text" : "password";
-  const section = $("#section-sensitive-balance");
-  if (section) section.hidden = !v;
   const gridBal = $("#grid-balance-edit");
   if (gridBal) gridBal.hidden = !v;
   $("#btn-reveal-balance").hidden = v;
   $("#btn-hide-balance").hidden = !v;
-  capNhatHienThiSoDuDauDoc();
-  capNhatHienThiBienDong();
   renderThuChi();
   renderReport();
 }
@@ -1438,50 +1430,6 @@ function parseNumClient(s) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function capNhatHienThiSoDuDauDoc() {
-  const valEl = $("#so-du-dau-doc-hien-thi");
-  const rawEl = $("#so-du-dau-doc-raw");
-  if (!valEl) return;
-  if (!isRevealed()) {
-    valEl.textContent = "Đang ẩn — bấm Presently và nhập mật khẩu để xem.";
-    if (rawEl) {
-      rawEl.hidden = true;
-      rawEl.textContent = "";
-    }
-    return;
-  }
-  const raw = ($("#tq-a2")?.value ?? "").trim();
-  if (!raw) {
-    valEl.textContent = "Chưa nhập Balance — nhập số dư đầu (lưu trên KV).";
-    if (rawEl) {
-      rawEl.hidden = true;
-      rawEl.textContent = "";
-    }
-    return;
-  }
-  const n = parseNumClient($("#tq-a2").value);
-  valEl.textContent = fmtMoney(n);
-  if (rawEl) {
-    rawEl.hidden = true;
-    rawEl.textContent = "";
-  }
-}
-
-function capNhatHienThiBienDong() {
-  const el = $("#bien-dong-doc-hien-thi");
-  if (!el) return;
-  if (!isRevealed()) {
-    el.textContent = "Đang ẩn — bấm Presently (cùng mật khẩu với Balance) để xem.";
-    return;
-  }
-  const v = ($("#tq-e2")?.value ?? "").trim();
-  if (!v) {
-    el.textContent = "—";
-    return;
-  }
-  el.textContent = fmtMoney(parseNumClient(v));
-}
-
 function refreshComputedFromClient() {
   const duDau = parseNumClient($("#tq-a2").value);
   let sumThu = 0;
@@ -1515,8 +1463,6 @@ function refreshComputedFromClient() {
     sumThuChiChi: sumChi,
   };
   renderReport();
-  capNhatHienThiSoDuDauDoc();
-  capNhatHienThiBienDong();
 }
 
 async function saveBalanceToKv() {
@@ -1822,17 +1768,50 @@ async function main() {
   setRevealed(isRevealed());
   setAutoSyncUi();
 
-  async function onRevealBalanceClick() {
-    const p = prompt("Nhập mật khẩu để hiện Số dư đầu:");
+  function openRevealPasswordModal() {
+    const backdrop = $("#reveal-password-backdrop");
+    const modal = $("#reveal-password-modal");
+    const input = $("#input-reveal-password");
+    const err = $("#reveal-password-error");
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    if (input) input.value = "";
+    if (backdrop) backdrop.hidden = false;
+    if (modal) modal.hidden = false;
+    requestAnimationFrame(() => input?.focus());
+  }
+
+  function closeRevealPasswordModal() {
+    const backdrop = $("#reveal-password-backdrop");
+    const modal = $("#reveal-password-modal");
+    if (backdrop) backdrop.hidden = true;
+    if (modal) modal.hidden = true;
+  }
+
+  $("#btn-reveal-balance").addEventListener("click", openRevealPasswordModal);
+  $("#btn-reveal-password-cancel")?.addEventListener("click", closeRevealPasswordModal);
+  $("#reveal-password-backdrop")?.addEventListener("click", closeRevealPasswordModal);
+  $("#form-reveal-password")?.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const p = String($("#input-reveal-password")?.value ?? "");
     if (!p) return;
+    const err = $("#reveal-password-error");
     try {
       await api("/api/reveal-balance", { method: "POST", body: JSON.stringify({ password: p }) });
+      closeRevealPasswordModal();
       setRevealed(true);
     } catch (e) {
-      alert(e.body?.error || e.message || "Sai mật khẩu.");
+      if (err) {
+        err.textContent = e.body?.error || e.message || "Sai mật khẩu.";
+        err.hidden = false;
+      }
     }
-  }
-  $("#btn-reveal-balance").addEventListener("click", onRevealBalanceClick);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("#reveal-password-modal")?.hidden) closeRevealPasswordModal();
+  });
   $("#btn-hide-balance").addEventListener("click", () => setRevealed(false));
 
   $("#form-login").addEventListener("submit", async (ev) => {

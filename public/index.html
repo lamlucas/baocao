@@ -517,18 +517,21 @@
           <div class="tab-panel" data-panel="bao_cao" role="tabpanel" hidden>
             <h2 class="section-title">Báo cáo</h2>
 
-            <div class="du-dau-doc-sheet" role="status" aria-live="polite" id="section-sensitive-balance" hidden>
-              <p class="du-dau-doc-label"><strong>Balance</strong></p>
-              <p class="du-dau-doc-value" id="so-du-dau-doc-hien-thi">—</p>
-              <p class="du-dau-doc-hint muted small panel-guide" id="so-du-dau-doc-raw" hidden></p>
-              <p class="du-dau-doc-label" style="margin-top: 0.85rem">
-                <strong>Balance Fluctuations</strong>
-              </p>
-              <p class="du-dau-doc-value" id="bien-dong-doc-hien-thi">—</p>
-            </div>
-            <div class="du-dau-actions">
-              <button type="button" class="btn secondary" id="btn-reveal-balance">Presently</button>
-              <button type="button" class="btn ghost" id="btn-hide-balance" hidden>Hide</button>
+            <div class="du-dau-balance-block">
+              <div class="grid-overview grid-balance-reveal" id="grid-balance-edit" hidden>
+                <label class="field">
+                  <span>Balance</span>
+                  <input type="text" id="tq-a2" class="input" inputmode="decimal" />
+                </label>
+                <label class="field">
+                  <span>Balance Fluctuations</span>
+                  <input type="text" id="tq-e2" class="input" readonly />
+                </label>
+              </div>
+              <div class="du-dau-actions">
+                <button type="button" class="btn secondary" id="btn-reveal-balance">Presently</button>
+                <button type="button" class="btn ghost" id="btn-hide-balance" hidden>Hide</button>
+              </div>
             </div>
 
             <h3 class="subsection-title" style="margin-top: 0.85rem">Theo dữ liệu Sheet</h3>
@@ -545,17 +548,6 @@
               <label class="field">
                 <span>Tổng công nợ</span>
                 <input type="text" id="tq-d2" class="input" readonly />
-              </label>
-            </div>
-
-            <div class="grid-overview" id="grid-balance-edit" hidden>
-              <label class="field">
-                <span>Balance (số dư đầu — lưu KV)</span>
-                <input type="password" id="tq-a2" class="input" inputmode="decimal" />
-              </label>
-              <label class="field">
-                <span>Balance Fluctuations (tự động)</span>
-                <input type="password" id="tq-e2" class="input" readonly />
               </label>
             </div>
 
@@ -677,6 +669,35 @@
         </div>
       </section>
     </main>
+
+    <div id="reveal-password-backdrop" class="reveal-modal-backdrop" hidden></div>
+    <div
+      id="reveal-password-modal"
+      class="reveal-modal"
+      role="dialog"
+      aria-labelledby="reveal-password-title"
+      aria-modal="true"
+      hidden
+    >
+      <form id="form-reveal-password" class="reveal-modal-form">
+        <h3 id="reveal-password-title" class="reveal-modal-title">Nhập Mật Khẩu</h3>
+        <label class="field reveal-modal-field">
+          <input
+            type="password"
+            id="input-reveal-password"
+            class="input"
+            autocomplete="current-password"
+            placeholder="••••••••"
+            required
+          />
+        </label>
+        <p id="reveal-password-error" class="error" hidden></p>
+        <div class="reveal-modal-actions">
+          <button type="button" class="btn ghost" id="btn-reveal-password-cancel">Huỷ</button>
+          <button type="submit" class="btn primary">OK</button>
+        </div>
+      </form>
+    </div>
 
     <script src="/app.js" type="module"></script>
   </body>
