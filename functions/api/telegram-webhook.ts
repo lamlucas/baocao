@@ -1,5 +1,4 @@
 import type { Env } from "../env";
-import { applyCongNoAfterThu } from "../lib/congNoSheet";
 import { getSheetsAccessToken, sheetsBatchGet, sheetsBatchGetMergeSafe, sheetsBatchUpdate, sheetsValuesAppend } from "../lib/google";
 import {
   buildCocAppendRows,
@@ -299,21 +298,6 @@ async function writeThuChiEntryToSheet(env: Env, unix: number, thuChiOne: ThuChi
 
   await sheetsValuesAppend(token, idMain, `'${SHEET_TC}'!A:D`, [appendRow], "USER_ENTERED");
   await sheetsBatchUpdate(token, idMain, [{ range: `'${SHEET_TQ}'!A2:C2`, values: tqRow2 }]);
-
-  if (thuChiOne.kind === "THU") {
-    try {
-      await applyCongNoAfterThu(
-        token,
-        env.SPREADSHEET_ID_DEBT_SALES,
-        SHEET_CN,
-        thuChiOne.note,
-        num(thuChiOne.amountStr),
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("applyCongNoAfterThu", msg);
-    }
-  }
 }
 
 export const onRequestGet: PagesFunction<Env> = async () => {
