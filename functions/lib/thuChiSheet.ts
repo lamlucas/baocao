@@ -107,12 +107,7 @@ export function normalizeThuChiDataRow(cells: unknown): string[] {
   const ch = row[2];
   const chi = typeof ch === "number" && Number.isFinite(ch) ? String(ch) : String(ch ?? "").trim();
   let ten = String(row[3] ?? "").trim();
-  let ghiChu = String(row[4] ?? "").trim();
-  /** Legacy 4 cột: D là ghi chú, không có tên khách. */
-  if (src.length < 5 && !ghiChu && ten) {
-    ghiChu = ten;
-    ten = "";
-  }
+  const ghiChu = String(row[4] ?? "").trim();
   return [ngay, thu, chi, ten, ghiChu];
 }
 

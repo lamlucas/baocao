@@ -409,6 +409,10 @@ function sumThuChiRows(rows) {
   return { thu, chi };
 }
 
+function thuChiReportTen(r) {
+  return String(r.ten ?? "").trim();
+}
+
 function renderThuChiDetailTable(tbodyEl, rows) {
   if (!tbodyEl) return;
   tbodyEl.innerHTML = "";
@@ -423,7 +427,7 @@ function renderThuChiDetailTable(tbodyEl, rows) {
     tr.innerHTML = `
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.thu)}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.chi)}</td>
-      <td class="cell-readonly">${escapeHtml(r.ghiChu ?? "")}</td>`;
+      <td class="cell-readonly">${escapeHtml(thuChiReportTen(r))}</td>`;
     tbodyEl.appendChild(tr);
   }
 }
