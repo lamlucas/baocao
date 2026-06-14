@@ -48,6 +48,8 @@ const state = {
   chiTieuDaiLyFilter: "",
   baoCaoThuChiCompareNav: { month: "", day: "" },
   baoCaoThuChiCompareFilter: { month: "", daiLy: "" },
+  /** "" | "desc" | "asc" — sắp xếp cột Chênh trong bảng so khớp đại lý. */
+  compareBcTcChenhSort: "",
 };
 
 function rowThuChi(r) {
@@ -603,6 +605,41 @@ function summarizeCompareRows(rows) {
   return { khop, lech, tongBctk, tongThuChi };
 }
 
+function sortCompareBcTcRowsByChenh(rows, mode) {
+  if (!mode || !rows?.length) return rows ?? [];
+  const sorted = [...rows];
+  sorted.sort((a, b) => {
+    const ca = compareBcTcAmount(a.chenh);
+    const cb = compareBcTcAmount(b.chenh);
+    return mode === "asc" ? ca - cb : cb - ca;
+  });
+  return sorted;
+}
+
+function updateCompareBcTcChenhSortIndicators() {
+  const mode = state.compareBcTcChenhSort;
+  for (const id of ["btn-compare-bc-tc-sort-chenh-month", "btn-compare-bc-tc-sort-chenh-day"]) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    const ind = btn.querySelector(".sort-indicator");
+    if (ind) ind.textContent = mode === "asc" ? "↑" : mode === "desc" ? "↓" : "↕";
+    btn.classList.toggle("is-active", Boolean(mode));
+    btn.setAttribute("aria-pressed", String(Boolean(mode)));
+    btn.title =
+      mode === "desc"
+        ? "Chênh: lớn → nhỏ (bấm để nhỏ → lớn)"
+        : mode === "asc"
+          ? "Chênh: nhỏ → lớn (bấm để mặc định)"
+          : "Sắp xếp theo chênh lệch";
+  }
+}
+
+function cycleCompareBcTcChenhSort() {
+  const cur = state.compareBcTcChenhSort;
+  state.compareBcTcChenhSort = cur === "" ? "desc" : cur === "desc" ? "asc" : "";
+  renderBaoCaoThuChiCompareDrill();
+}
+
 function renderCompareBcTcTenTable(tbodyEl, rows) {
   if (!tbodyEl) return;
   tbodyEl.innerHTML = "";
@@ -687,7 +724,10 @@ function renderBaoCaoThuChiCompareDrill() {
 
   if (month && !day) {
     const monthBlock = (report.byMonth ?? []).find((m) => m.thang === month);
-    renderCompareBcTcTenTable($("#table-compare-bc-tc-month-ten tbody"), monthBlock?.rows ?? []);
+    renderCompareBcTcTenTable(
+      $("#table-compare-bc-tc-month-ten tbody"),
+      sortCompareBcTcRowsByChenh(monthBlock?.rows ?? [], state.compareBcTcChenhSort),
+    );
 
     const tbDays = $("#table-compare-bc-tc-days tbody");
     if (tbDays) {
@@ -722,8 +762,13 @@ function renderBaoCaoThuChiCompareDrill() {
 
   if (day) {
     const dayBlock = (report.byDay ?? []).find((d) => d.date === day);
-    renderCompareBcTcTenTable($("#table-compare-bc-tc-day-ten tbody"), dayBlock?.rows ?? []);
+    renderCompareBcTcTenTable(
+      $("#table-compare-bc-tc-day-ten tbody"),
+      sortCompareBcTcRowsByChenh(dayBlock?.rows ?? [], state.compareBcTcChenhSort),
+    );
   }
+
+  updateCompareBcTcChenhSortIndicators();
 }
 
 function renderReportThuChiDrill() {
@@ -2244,6 +2289,9 @@ function bindToolbarAfterLogin() {
   $("#compare-bc-tc-filter-dai-ly")?.addEventListener("change", (ev) => {
     setCompareBcTcFilterDaiLy(ev.target.value || "");
   });
+  for (const id of ["btn-compare-bc-tc-sort-chenh-month", "btn-compare-bc-tc-sort-chenh-day"]) {
+    document.getElementById(id)?.addEventListener("click", cycleCompareBcTcChenhSort);
+  }
 }
 
 function bindOverviewInput() {
