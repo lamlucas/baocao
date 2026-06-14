@@ -245,6 +245,21 @@ function tbody(id) {
   return $(`#${id} tbody`);
 }
 
+/** Hiển thị: chữ cái đầu mỗi từ viết hoa (dữ liệu sheet không đổi). */
+function formatDisplayLabel(s) {
+  const t = String(s ?? "").trim();
+  if (!t || t === "—") return t || "—";
+  return t
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLocaleLowerCase("vi");
+      if (!lower) return word;
+      return lower.charAt(0).toLocaleUpperCase("vi") + lower.slice(1);
+    })
+    .join(" ");
+}
+
 /** yyyy-mm-dd → dd/mm/yyyy (hiển thị báo cáo). */
 function formatDayForDisplay(s) {
   const t = String(s ?? "").trim().split(/\s+/)[0] ?? "";
@@ -305,7 +320,7 @@ function thuChiNguonDisplayLabel(normKey) {
     if (!thuChiRowHasData(r)) continue;
     if (thuChiRowNguonNormKey(r) !== normKey) continue;
     const raw = String(r.ghiChu ?? "").trim();
-    return raw || "—";
+    return formatDisplayLabel(raw || "—");
   }
   return normKey;
 }
@@ -373,7 +388,7 @@ function populateReportThuChiNguonFilter() {
   for (const { norm, label } of list) {
     const opt = document.createElement("option");
     opt.value = norm;
-    opt.textContent = label;
+    opt.textContent = formatDisplayLabel(label);
     sel.appendChild(opt);
   }
   const prevNorm = prev ? thuChiNguonNormKey(prev) : "";
@@ -410,7 +425,7 @@ function sumThuChiRows(rows) {
 }
 
 function thuChiReportTen(r) {
-  return String(r.ten ?? "").trim();
+  return formatDisplayLabel(String(r.ten ?? "").trim());
 }
 
 function renderThuChiDetailTable(tbodyEl, rows) {
@@ -516,7 +531,7 @@ function populateCompareBcTcFilters() {
     for (const d of list) {
       const opt = document.createElement("option");
       opt.value = d;
-      opt.textContent = d;
+      opt.textContent = formatDisplayLabel(d);
       daiLySel.appendChild(opt);
     }
     daiLySel.value = prevDaiLy;
@@ -525,7 +540,7 @@ function populateCompareBcTcFilters() {
 
 function compareBcTcFilterScopeLabel(month, daiLy, day) {
   const parts = [];
-  if (daiLy) parts.push(`Đại lý: ${daiLy}`);
+  if (daiLy) parts.push(`Đại lý: ${formatDisplayLabel(daiLy)}`);
   if (day) parts.push(`Ngày ${formatDayForDisplay(day)}`);
   else if (month) parts.push(formatMonthForDisplay(month));
   return parts.length ? parts.join(" · ") : "";
@@ -593,7 +608,7 @@ function renderCompareBcTcTenTable(tbodyEl, rows) {
       ? `<span class="compare-status-ok">Khớp</span>`
       : `<span class="compare-status-bad">Lệch</span>`;
     tr.innerHTML = `
-      <td>${escapeHtml(r.ten)}</td>
+      <td>${displayLabel(r.ten)}</td>
       <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.baoCaoThu))}</td>
       <td class="cell-num">${fmtMoney(compareBcTcAmount(r.thuChiThu))}</td>
       <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.chenh))}</td>
@@ -886,7 +901,7 @@ function renderChiTieuByNguonFilter() {
     if (block) block.hidden = hideNguonSummary;
   }
 
-  if (labelEl) labelEl.textContent = filter;
+  if (labelEl) labelEl.textContent = formatDisplayLabel(filter);
   if (scopeEl) scopeEl.textContent = chiTieuScopeLabel(month, day);
 
   if (!tbody) return;
@@ -909,7 +924,7 @@ function renderChiTieuByNguonFilter() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="cell-readonly">${escapeHtml(formatDayForDisplay(r.ngay))}</td>
-      <td class="cell-readonly">${escapeHtml(r.mcc ?? "—")}</td>
+      <td class="cell-readonly">${displayLabel(r.mcc ?? "—")}</td>
       <td class="cell-readonly cell-num">${fmtChiTieuUsd(chiTieuAmount(r.tongTieu))}</td>
       <td class="cell-readonly cell-num">${fmtChiTieuUsd(chiTieuAmount(r.tongThu))}</td>`;
     tbody.appendChild(tr);
@@ -1044,7 +1059,7 @@ function renderChiTieuDaiLyMonthTable(tbodyEl, labelEl, monthIso, entries) {
   for (const d of daiLyRows) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(d.daiLy)}</td>
+      <td>${displayLabel(d.daiLy)}</td>
       <td class="cell-num">${fmtChiTieuUsd(d.tongTieu)}</td>
       <td class="cell-num">${fmtChiTieuUsd(d.tongThu)}</td>`;
     tbodyEl.appendChild(tr);
@@ -1086,7 +1101,7 @@ function renderChiTieuByDaiLyFilter() {
     if (block) block.hidden = true;
   }
 
-  if (labelEl) labelEl.textContent = filter;
+  if (labelEl) labelEl.textContent = formatDisplayLabel(filter);
   if (scopeEl) scopeEl.textContent = chiTieuScopeLabel(month, day);
 
   if (!tbody) return;
@@ -1109,7 +1124,7 @@ function renderChiTieuByDaiLyFilter() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="cell-readonly">${escapeHtml(formatDayForDisplay(r.ngay))}</td>
-      <td class="cell-readonly">${escapeHtml(r.mcc ?? "—")}</td>
+      <td class="cell-readonly">${displayLabel(r.mcc ?? "—")}</td>
       <td class="cell-readonly cell-num">${fmtChiTieuUsd(chiTieuAmount(r.tongTieu))}</td>
       <td class="cell-readonly cell-num">${fmtChiTieuUsd(chiTieuAmount(r.tongThu))}</td>`;
     tbody.appendChild(tr);
@@ -1145,7 +1160,7 @@ function renderChiTieuNguonMonthTable(tbodyEl, labelEl, monthIso, entries) {
   for (const n of nguonRows) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(n.nguon)}</td>
+      <td>${displayLabel(n.nguon)}</td>
       <td class="cell-num">${fmtChiTieuUsd(chiTieuAmount(n.tongTieu))}</td>
       <td class="cell-num">${fmtChiTieuUsd(chiTieuAmount(n.tongThu))}</td>`;
     tbodyEl.appendChild(tr);
@@ -1164,10 +1179,10 @@ function renderChiTieuMccTable(tbodyEl, groups) {
   for (const g of groups) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="cell-readonly">${escapeHtml(g.mcc)}</td>
+      <td class="cell-readonly">${displayLabel(g.mcc)}</td>
       <td class="cell-readonly cell-num">${fmtChiTieuUsd(g.tongTieu)}</td>
       <td class="cell-readonly cell-num">${fmtChiTieuUsd(g.tongThu)}</td>
-      <td class="cell-readonly">${escapeHtml(g.nguon || "—")}</td>`;
+      <td class="cell-readonly">${displayLabel(g.nguon || "—")}</td>`;
     tbodyEl.appendChild(tr);
   }
 }
@@ -1183,7 +1198,7 @@ function populateChiTieuDaiLyFilter() {
   for (const d of list) {
     const opt = document.createElement("option");
     opt.value = d;
-    opt.textContent = d;
+    opt.textContent = formatDisplayLabel(d);
     sel.appendChild(opt);
   }
   sel.value = prev;
@@ -1198,7 +1213,7 @@ function populateChiTieuNguonFilter() {
   for (const n of list) {
     const opt = document.createElement("option");
     opt.value = n;
-    opt.textContent = n;
+    opt.textContent = formatDisplayLabel(n);
     sel.appendChild(opt);
   }
   sel.value = prev;
@@ -1353,8 +1368,8 @@ function renderCoc() {
       <td class="cell-readonly">${escapeHtml(formatDayForDisplay(r.ngay ?? ""))}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.thu)}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.chi)}</td>
-      <td class="cell-readonly">${escapeHtml(r.ten ?? "")}</td>
-      <td class="cell-readonly">${escapeHtml(r.ghiChu ?? "")}</td>`;
+      <td class="cell-readonly">${displayLabel(r.ten ?? "")}</td>
+      <td class="cell-readonly">${displayLabel(r.ghiChu ?? "")}</td>`;
     tb.appendChild(tr);
   });
 }
@@ -1367,7 +1382,7 @@ function renderCongNo() {
     sumNo += parseNumClient(r.tienNo);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="cell-readonly">${escapeHtml(r.ten ?? "")}</td>
+      <td class="cell-readonly">${displayLabel(r.ten ?? "")}</td>
       <td class="cell-readonly cell-num">${cellMoneyDisplay(r.tienNo)}</td>`;
     tb.appendChild(tr);
   });
@@ -1401,7 +1416,7 @@ function renderHhLoaiTruTable() {
       <td class="cell-readonly">${escapeHtml(ngayShow)}</td>
       <td class="cell-readonly cell-num">${hhLoaiTruAmountCell(row, "thu")}</td>
       <td class="cell-readonly cell-num">${hhLoaiTruAmountCell(row, "chi")}</td>
-      <td class="cell-readonly">${escapeHtml(row.tenDaiLy ?? "")}</td>
+      <td class="cell-readonly">${displayLabel(row.tenDaiLy ?? "")}</td>
       <td class="cell-readonly">${escapeHtml(row.note ?? "")}</td>
       <td class="cell-readonly"><button type="button" class="btn ghost btn-sm" data-hh-del="${idx}">Xóa</button></td>`;
     tb.appendChild(tr);
@@ -1924,6 +1939,10 @@ function escapeHtml(s) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function displayLabel(s) {
+  return escapeHtml(formatDisplayLabel(s));
 }
 
 function applyPayload(data, options = {}) {
