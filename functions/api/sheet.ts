@@ -26,6 +26,7 @@ import {
   mergeBaoCaoTkColumnRanges,
   parseBaoCaoTkSheetRows,
 } from "../lib/baoCaoTkReport";
+import { buildBaoCaoThuChiCompareReport } from "../lib/baoCaoThuChiCompare";
 import {
   flexibleDateToIso,
   normalizeCocDataRow,
@@ -228,12 +229,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     const { headerRow: baoCaoTkHeader, bodyRows: baoCaoTkBody } = findBaoCaoTkDataStart(baoCaoTkMerged);
     const baoCaoTkEntries = parseBaoCaoTkSheetRows(baoCaoTkBody, baoCaoTkHeader);
     const reportChiTieu = buildChiTieuReport(baoCaoTkEntries, todayVn);
+    const reportBaoCaoThuChiCompare = buildBaoCaoThuChiCompareReport(baoCaoTkEntries, thuChiModels);
 
     const thuChiModels = thuChiData.map((r) => ({
       ngay: r[0] ?? "",
       thu: r[1] ?? "",
       chi: r[2] ?? "",
-      ghiChu: r[3] ?? "",
+      ten: r[3] ?? "",
+      ghiChu: r[4] ?? "",
     }));
 
     const hhLoaiTruRaw = batchMain[HH_LOAI_TRU_TAB] ?? [];
@@ -325,7 +328,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         ngay: r[0],
         thu: r[1],
         chi: r[2],
-        ghiChu: r[3],
+        ten: r[3],
+        ghiChu: r[4],
       })),
       coc: cocData.map((r) => ({
         ngay: r[0],
@@ -363,6 +367,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         nguon: e.nguon,
       })),
       reportChiTieu,
+      reportBaoCaoThuChiCompare,
       reportLuongNv,
       hhLoaiTru,
       sheetDiagnostics: {

@@ -90,11 +90,11 @@ export function stringifySheetRow(cells: unknown): string[] {
   });
 }
 
-/** Chuẩn hóa một dòng THU_CHI sau batchGet UNFORMATTED. */
+/** Chuẩn hóa một dòng THU_CHI sau batchGet UNFORMATTED (A–E: D Tên, E Ghi chú). */
 export function normalizeThuChiDataRow(cells: unknown): string[] {
   const src = Array.isArray(cells) ? cells : [];
   const row = [...src];
-  while (row.length < 4) row.push("");
+  while (row.length < 5) row.push("");
   const a = row[0];
   let ngay = "";
   if (typeof a === "number" && Number.isFinite(a)) {
@@ -106,8 +106,14 @@ export function normalizeThuChiDataRow(cells: unknown): string[] {
   const thu = typeof th === "number" && Number.isFinite(th) ? String(th) : String(th ?? "").trim();
   const ch = row[2];
   const chi = typeof ch === "number" && Number.isFinite(ch) ? String(ch) : String(ch ?? "").trim();
-  const ghiChu = String(row[3] ?? "").trim();
-  return [ngay, thu, chi, ghiChu];
+  let ten = String(row[3] ?? "").trim();
+  let ghiChu = String(row[4] ?? "").trim();
+  /** Legacy 4 cột: D là ghi chú, không có tên khách. */
+  if (src.length < 5 && !ghiChu && ten) {
+    ghiChu = ten;
+    ten = "";
+  }
+  return [ngay, thu, chi, ten, ghiChu];
 }
 
 function numericOrText(cell: unknown): string {
@@ -191,6 +197,7 @@ export type ThuChiSheetModel = {
   ngay: string;
   thu: string;
   chi: string;
+  ten: string;
   ghiChu: string;
 };
 
@@ -293,6 +300,7 @@ export function buildThuChiAppendRow(m: ThuChiSheetModel): (string | number)[] {
     isoToSheetDateInput(m.ngay),
     m.thu.trim() === "" ? "" : num(m.thu),
     m.chi.trim() === "" ? "" : num(m.chi),
+    m.ten,
     m.ghiChu,
   ];
 }
@@ -313,12 +321,12 @@ export function buildThuChiAppendedMatrix(
   existing: unknown[][],
   appended: ThuChiSheetModel[],
 ): (string | number)[][] {
-  const defaultHeader = ["Ngày", "Thu", "Chi", "Ghi chú"];
+  const defaultHeader = ["Ngày", "Thu", "Chi", "Tên", "Ghi chú"];
   const header = existing[0]?.length
     ? stringifySheetRow(existing[0] as unknown[])
     : defaultHeader;
-  while (header.length < 4) header.push("");
-  const h = header.slice(0, 4).map(String);
+  while (header.length < 5) header.push("");
+  const h = header.slice(0, 5).map(String);
   const body: (string | number)[][] = [];
   for (let i = 1; i < existing.length; i++) {
     const norm = normalizeThuChiDataRow(existing[i]);
@@ -330,6 +338,7 @@ export function buildThuChiAppendedMatrix(
       thuS.trim() === "" ? "" : num(thuS),
       chiS.trim() === "" ? "" : num(chiS),
       norm[3],
+      norm[4],
     ]);
   }
   for (const m of appended) {
@@ -337,19 +346,21 @@ export function buildThuChiAppendedMatrix(
       isoToSheetDateInput(m.ngay),
       m.thu.trim() === "" ? "" : num(m.thu),
       m.chi.trim() === "" ? "" : num(m.chi),
+      m.ten,
       m.ghiChu,
     ]);
   }
-  return padMatrix([h, ...body], 4);
+  return padMatrix([h, ...body], 5);
 }
 
 export function isThuChiModelEmpty(m: {
   ngay: string;
   thu: string;
   chi: string;
+  ten?: string;
   ghiChu: string;
 }): boolean {
-  return `${m.ngay ?? ""}${m.thu ?? ""}${m.chi ?? ""}${m.ghiChu ?? ""}`.trim() === "";
+  return `${m.ngay ?? ""}${m.thu ?? ""}${m.chi ?? ""}${m.ten ?? ""}${m.ghiChu ?? ""}`.trim() === "";
 }
 
 /** Điền từng dòng mới vào dòng trống (A–D) đầu tiên từ trên xuống; không sửa dòng đã có dữ liệu. Hết chỗ trống thì nối cuối. */
@@ -373,18 +384,18 @@ export function applyThuChiNewRowsFillEmptySlots(
 
 /** Bỏ các dòng trống hoàn toàn ở cuối (tránh kéo công thức E xuống hàng pad không có dữ liệu). */
 export function trimTrailingEmptyThuChiModels(
-  rows: { ngay: string; thu: string; chi: string; ghiChu: string }[],
-): { ngay: string; thu: string; chi: string; ghiChu: string }[] {
+  rows: { ngay: string; thu: string; chi: string; ten?: string; ghiChu: string }[],
+): { ngay: string; thu: string; chi: string; ten?: string; ghiChu: string }[] {
   const o = [...rows];
   while (o.length > 0 && isThuChiModelEmpty(o[o.length - 1]!)) o.pop();
   return o;
 }
 
-/** Ma trận tab THU_CHI: header + dòng dữ liệu A-D, phần pad phía dưới để trống. */
+/** Ma trận tab THU_CHI: header + dòng dữ liệu A–E, phần pad phía dưới để trống. */
 export function buildThuChiPaddedMatrix(
-  rows: { ngay: string; thu: string; chi: string; ghiChu: string }[],
+  rows: { ngay: string; thu: string; chi: string; ten?: string; ghiChu: string }[],
 ): (string | number)[][] {
-  const header: (string | number)[] = ["Ngày", "Thu", "Chi", "Ghi chú"];
+  const header: (string | number)[] = ["Ngày", "Thu", "Chi", "Tên", "Ghi chú"];
   const out: (string | number)[][] = [header];
   const trimmed = trimTrailingEmptyThuChiModels(rows);
   const dataCount = trimmed.length;
@@ -396,14 +407,15 @@ export function buildThuChiPaddedMatrix(
       const ngay = model.ngay ?? "";
       const thu = model.thu ?? "";
       const chi = model.chi ?? "";
+      const ten = model.ten ?? "";
       const ghiChu = model.ghiChu ?? "";
       const thuCell: string | number = thu.trim() === "" ? "" : num(thu);
       const chiCell: string | number = chi.trim() === "" ? "" : num(chi);
-      out.push([isoToSheetDateInput(ngay), thuCell, chiCell, ghiChu]);
+      out.push([isoToSheetDateInput(ngay), thuCell, chiCell, ten, ghiChu]);
     } else if (dataCount === 0 && i === 0) {
-      out.push(["", "", "", ""]);
+      out.push(["", "", "", "", ""]);
     } else {
-      out.push(["", "", "", ""]);
+      out.push(["", "", "", "", ""]);
     }
   }
   return out;
@@ -432,16 +444,15 @@ export function bienDongE2(duDau: number, thuChiData: string[][]): number {
   return x;
 }
 
-export function sheetRowsToThuChiModels(dataRows: string[][]): {
-  ngay: string;
-  thu: string;
-  chi: string;
-  ghiChu: string;
-}[] {
-  return dataRows.map((r) => ({
-    ngay: r[0] ?? "",
-    thu: r[1] ?? "",
-    chi: r[2] ?? "",
-    ghiChu: r[3] ?? "",
-  }));
+export function sheetRowsToThuChiModels(dataRows: string[][]): ThuChiSheetModel[] {
+  return dataRows.map((r) => {
+    const norm = normalizeThuChiDataRow(r);
+    return {
+      ngay: norm[0] ?? "",
+      thu: norm[1] ?? "",
+      chi: norm[2] ?? "",
+      ten: norm[3] ?? "",
+      ghiChu: norm[4] ?? "",
+    };
+  });
 }

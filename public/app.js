@@ -46,6 +46,8 @@ const state = {
   chiTieuNav: { month: "", day: "" },
   chiTieuNguonFilter: "",
   chiTieuDaiLyFilter: "",
+  baoCaoThuChiCompareNav: { month: "", day: "" },
+  baoCaoThuChiCompareFilter: { month: "", daiLy: "" },
 };
 
 function rowThuChi(r) {
@@ -53,6 +55,7 @@ function rowThuChi(r) {
     ngay: r.ngay ?? "",
     thu: r.thu ?? "",
     chi: r.chi ?? "",
+    ten: r.ten ?? "",
     ghiChu: r.ghiChu ?? "",
   };
 }
@@ -428,6 +431,269 @@ function renderThuChiDetailTable(tbodyEl, rows) {
 function setReportThuChiNav(month, day) {
   state.reportThuChiNav = { month: month || "", day: day || "" };
   renderReportThuChiDrill();
+}
+
+function compareBcTcNormTen(raw) {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function filterCompareReport(raw, daiLyFilter) {
+  const src = raw ?? { byMonth: [], byDay: [], daiLyList: [], monthList: [] };
+  let byMonth = src.byMonth ?? [];
+  let byDay = src.byDay ?? [];
+  if (!daiLyFilter) {
+    return {
+      byMonth,
+      byDay,
+      daiLyList: src.daiLyList ?? [],
+      monthList: src.monthList ?? [],
+    };
+  }
+  const norm = compareBcTcNormTen(daiLyFilter);
+  byMonth = byMonth
+    .map((m) => ({
+      ...m,
+      rows: (m.rows ?? []).filter((r) => compareBcTcNormTen(r.ten) === norm),
+    }))
+    .filter((m) => m.rows.length > 0);
+  byDay = byDay
+    .map((d) => ({
+      ...d,
+      rows: (d.rows ?? []).filter((r) => compareBcTcNormTen(r.ten) === norm),
+    }))
+    .filter((d) => d.rows.length > 0);
+  return {
+    byMonth,
+    byDay,
+    daiLyList: src.daiLyList ?? [],
+    monthList: byMonth.map((m) => m.thang),
+  };
+}
+
+function populateCompareBcTcFilters() {
+  const raw = state.reportBaoCaoThuChiCompare ?? {
+    daiLyList: [],
+    monthList: [],
+    byMonth: [],
+    byDay: [],
+  };
+  const filtered = filterCompareReport(raw, state.baoCaoThuChiCompareFilter.daiLy || "");
+  const monthSel = $("#compare-bc-tc-filter-month");
+  const daiLySel = $("#compare-bc-tc-filter-dai-ly");
+  const prevMonth = state.baoCaoThuChiCompareFilter.month || "";
+  const prevDaiLy = state.baoCaoThuChiCompareFilter.daiLy || "";
+
+  if (monthSel) {
+    const months = filtered.monthList?.length
+      ? filtered.monthList
+      : [...new Set((filtered.byMonth ?? []).map((m) => m.thang))].sort((a, b) => b.localeCompare(a));
+    monthSel.innerHTML = `<option value="">Tất cả tháng</option>`;
+    for (const thang of months) {
+      const opt = document.createElement("option");
+      opt.value = thang;
+      opt.textContent = formatMonthForDisplay(thang);
+      monthSel.appendChild(opt);
+    }
+    monthSel.value = prevMonth;
+  }
+
+  if (daiLySel) {
+    const list = raw.daiLyList?.length
+      ? raw.daiLyList
+      : [
+          ...new Set(
+            (raw.byMonth ?? []).flatMap((m) => (m.rows ?? []).map((r) => r.ten)).filter((t) => t && t !== "—"),
+          ),
+        ].sort((a, b) => a.localeCompare(b, "vi"));
+    daiLySel.innerHTML = `<option value="">Tất cả đại lý</option>`;
+    for (const d of list) {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = d;
+      daiLySel.appendChild(opt);
+    }
+    daiLySel.value = prevDaiLy;
+  }
+}
+
+function compareBcTcFilterScopeLabel(month, daiLy, day) {
+  const parts = [];
+  if (daiLy) parts.push(`Đại lý: ${daiLy}`);
+  if (day) parts.push(`Ngày ${formatDayForDisplay(day)}`);
+  else if (month) parts.push(formatMonthForDisplay(month));
+  return parts.length ? parts.join(" · ") : "";
+}
+
+function setCompareBcTcFilterMonth(value) {
+  state.baoCaoThuChiCompareFilter.month = value || "";
+  if (value) {
+    state.baoCaoThuChiCompareNav.month = value;
+    state.baoCaoThuChiCompareNav.day = "";
+  } else {
+    state.baoCaoThuChiCompareNav.month = "";
+    state.baoCaoThuChiCompareNav.day = "";
+  }
+  renderBaoCaoThuChiCompareDrill();
+}
+
+function setCompareBcTcFilterDaiLy(value) {
+  state.baoCaoThuChiCompareFilter.daiLy = value || "";
+  state.baoCaoThuChiCompareNav.day = "";
+  if (value && state.baoCaoThuChiCompareFilter.month) {
+    const scoped = filterCompareReport(state.reportBaoCaoThuChiCompare, value);
+    const ok = (scoped.monthList ?? []).includes(state.baoCaoThuChiCompareFilter.month);
+    if (!ok) {
+      state.baoCaoThuChiCompareFilter.month = "";
+      state.baoCaoThuChiCompareNav.month = "";
+    }
+  }
+  populateCompareBcTcFilters();
+  renderBaoCaoThuChiCompareDrill();
+}
+
+function compareBcTcAmount(v) {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return parseNumClient(v);
+}
+
+function summarizeCompareRows(rows) {
+  let khop = 0;
+  let lech = 0;
+  let tongBctk = 0;
+  let tongThuChi = 0;
+  for (const r of rows) {
+    if (r.khop) khop += 1;
+    else lech += 1;
+    tongBctk += compareBcTcAmount(r.baoCaoThu);
+    tongThuChi += compareBcTcAmount(r.thuChiThu);
+  }
+  return { khop, lech, tongBctk, tongThuChi };
+}
+
+function renderCompareBcTcTenTable(tbodyEl, rows) {
+  if (!tbodyEl) return;
+  tbodyEl.innerHTML = "";
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="5" class="muted">Không có dữ liệu so khớp.</td>`;
+    tbodyEl.appendChild(tr);
+    return;
+  }
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    if (!r.khop) tr.className = "compare-row-mismatch";
+    const status = r.khop
+      ? `<span class="compare-status-ok">Khớp</span>`
+      : `<span class="compare-status-bad">Lệch</span>`;
+    tr.innerHTML = `
+      <td>${escapeHtml(r.ten)}</td>
+      <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.baoCaoThu))}</td>
+      <td class="cell-num">${fmtMoney(compareBcTcAmount(r.thuChiThu))}</td>
+      <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.chenh))}</td>
+      <td>${status}</td>`;
+    tbodyEl.appendChild(tr);
+  }
+}
+
+function setBaoCaoThuChiCompareNav(month, day) {
+  state.baoCaoThuChiCompareNav = { month: month || "", day: day || "" };
+  renderBaoCaoThuChiCompareDrill();
+}
+
+function renderBaoCaoThuChiCompareDrill() {
+  const filterMonth = state.baoCaoThuChiCompareFilter.month || "";
+  const filterDaiLy = state.baoCaoThuChiCompareFilter.daiLy || "";
+  const { month: navMonth, day } = state.baoCaoThuChiCompareNav;
+  const month = filterMonth || navMonth;
+  const report = filterCompareReport(state.reportBaoCaoThuChiCompare, filterDaiLy);
+  const wrapMonths = $("#wrap-compare-bc-tc-months");
+  const wrapMonthDetail = $("#wrap-compare-bc-tc-month-detail");
+  const wrapDayDetail = $("#wrap-compare-bc-tc-day-detail");
+  const scopeEl = $("#compare-bc-tc-filter-scope");
+  if (!wrapMonths || !wrapMonthDetail || !wrapDayDetail) return;
+
+  const scopeText = compareBcTcFilterScopeLabel(month, filterDaiLy, day);
+  if (scopeEl) {
+    scopeEl.textContent = scopeText;
+    scopeEl.hidden = !scopeText;
+  }
+
+  wrapMonths.hidden = Boolean(month);
+  wrapMonthDetail.hidden = !month || Boolean(day);
+  wrapDayDetail.hidden = !day;
+
+  const tbMonth = $("#table-compare-bc-tc-month tbody");
+  if (!month && tbMonth) {
+    tbMonth.innerHTML = "";
+    const months = [...(report.byMonth ?? [])].sort((a, b) =>
+      String(b.thang).localeCompare(String(a.thang)),
+    );
+    if (!months.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="5" class="muted">Chưa có dữ liệu để so sánh.</td>`;
+      tbMonth.appendChild(tr);
+    } else {
+      for (const m of months) {
+        const sum = summarizeCompareRows(m.rows ?? []);
+        const tr = document.createElement("tr");
+        tr.className = "report-tc-click-row";
+        tr.dataset.month = String(m.thang);
+        tr.innerHTML = `
+          <td>${escapeHtml(formatMonthForDisplay(m.thang))}</td>
+          <td class="cell-num">${sum.khop}</td>
+          <td class="cell-num">${sum.lech}</td>
+          <td class="cell-num">${fmtChiTieuUsd(sum.tongBctk)}</td>
+          <td class="cell-num">${fmtMoney(sum.tongThuChi)}</td>`;
+        tbMonth.appendChild(tr);
+      }
+    }
+  }
+
+  const monthLabel = $("#compare-bc-tc-month-label");
+  if (monthLabel) monthLabel.textContent = month ? formatMonthForDisplay(month) : "—";
+
+  if (month && !day) {
+    const monthBlock = (report.byMonth ?? []).find((m) => m.thang === month);
+    renderCompareBcTcTenTable($("#table-compare-bc-tc-month-ten tbody"), monthBlock?.rows ?? []);
+
+    const tbDays = $("#table-compare-bc-tc-days tbody");
+    if (tbDays) {
+      tbDays.innerHTML = "";
+      const days = (report.byDay ?? [])
+        .filter((d) => String(d.date).startsWith(`${month}-`))
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      if (!days.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="5" class="muted">Không có ngày trong tháng này.</td>`;
+        tbDays.appendChild(tr);
+      } else {
+        for (const d of days) {
+          const sum = summarizeCompareRows(d.rows ?? []);
+          const tr = document.createElement("tr");
+          tr.className = "report-tc-click-row";
+          tr.dataset.day = String(d.date);
+          tr.innerHTML = `
+            <td>${escapeHtml(formatDayForDisplay(d.date))}</td>
+            <td class="cell-num">${sum.khop}</td>
+            <td class="cell-num">${sum.lech}</td>
+            <td class="cell-num">${fmtChiTieuUsd(sum.tongBctk)}</td>
+            <td class="cell-num">${fmtMoney(sum.tongThuChi)}</td>`;
+          tbDays.appendChild(tr);
+        }
+      }
+    }
+  }
+
+  const dayLabel = $("#compare-bc-tc-day-label");
+  if (dayLabel) dayLabel.textContent = day ? formatDayForDisplay(day) : "—";
+
+  if (day) {
+    const dayBlock = (report.byDay ?? []).find((d) => d.date === day);
+    renderCompareBcTcTenTable($("#table-compare-bc-tc-day-ten tbody"), dayBlock?.rows ?? []);
+  }
 }
 
 function renderReportThuChiDrill() {
@@ -1641,6 +1907,8 @@ function renderReport() {
   populateReportThuChiNguonFilter();
   renderReportThuChiDrill();
   renderReportThuChiToday();
+  populateCompareBcTcFilters();
+  renderBaoCaoThuChiCompareDrill();
   populateChiTieuNguonFilter();
   populateChiTieuDaiLyFilter();
   renderChiTieuToday();
@@ -1674,6 +1942,12 @@ function applyPayload(data, options = {}) {
     todayVietnam: null,
     nguonList: [],
     daiLyList: [],
+  };
+  state.reportBaoCaoThuChiCompare = data.reportBaoCaoThuChiCompare ?? {
+    byMonth: [],
+    byDay: [],
+    daiLyList: [],
+    monthList: [],
   };
   state.reportLuongNv = data.reportLuongNv ?? {
     todayVietnam: "",
@@ -1906,6 +2180,35 @@ function bindToolbarAfterLogin() {
   $("#btn-chi-tieu-back-days")?.addEventListener("click", () =>
     setChiTieuNav(state.chiTieuNav.month, ""),
   );
+
+  $("#table-compare-bc-tc-month")?.addEventListener("click", (ev) => {
+    const tr = ev.target.closest("tr.report-tc-click-row");
+    if (!tr?.dataset.month) return;
+    state.baoCaoThuChiCompareFilter.month = "";
+    const monthSel = $("#compare-bc-tc-filter-month");
+    if (monthSel) monthSel.value = "";
+    setBaoCaoThuChiCompareNav(tr.dataset.month, "");
+  });
+  $("#table-compare-bc-tc-days")?.addEventListener("click", (ev) => {
+    const tr = ev.target.closest("tr.report-tc-click-row");
+    if (!tr?.dataset.day) return;
+    setBaoCaoThuChiCompareNav(state.baoCaoThuChiCompareNav.month, tr.dataset.day);
+  });
+  $("#btn-compare-bc-tc-back-month")?.addEventListener("click", () => {
+    state.baoCaoThuChiCompareFilter.month = "";
+    const monthSel = $("#compare-bc-tc-filter-month");
+    if (monthSel) monthSel.value = "";
+    setBaoCaoThuChiCompareNav("", "");
+  });
+  $("#btn-compare-bc-tc-back-days")?.addEventListener("click", () =>
+    setBaoCaoThuChiCompareNav(state.baoCaoThuChiCompareNav.month, ""),
+  );
+  $("#compare-bc-tc-filter-month")?.addEventListener("change", (ev) => {
+    setCompareBcTcFilterMonth(ev.target.value || "");
+  });
+  $("#compare-bc-tc-filter-dai-ly")?.addEventListener("change", (ev) => {
+    setCompareBcTcFilterDaiLy(ev.target.value || "");
+  });
 }
 
 function bindOverviewInput() {

@@ -130,7 +130,8 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     ngay: r[0] ?? "",
     thu: r[1] ?? "",
     chi: r[2] ?? "",
-    ghiChu: r[3] ?? "",
+    ten: r[3] ?? "",
+    ghiChu: r[4] ?? "",
   }));
 
   const hhLoaiTruRaw = batchMain.data[HH_LOAI_TRU_TAB] ?? [];

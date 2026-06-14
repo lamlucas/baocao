@@ -1193,6 +1193,28 @@ body {
   margin: 0 0 1rem;
 }
 
+.compare-bc-tc-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.compare-row-mismatch td {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.compare-status-ok {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.compare-status-bad {
+  color: #f87171;
+  font-weight: 500;
+}
+
 .thu-chi-report-toolbar {
   display: flex;
   flex-wrap: wrap;

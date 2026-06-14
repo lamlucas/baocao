@@ -294,9 +294,9 @@ async function writeThuChiEntryToSheet(env: Env, unix: number, thuChiOne: ThuChi
   const amount = String(num(thuChiOne.amountStr));
   const thu = thuChiOne.kind === "THU" ? amount : "";
   const chi = thuChiOne.kind === "CHI" ? amount : "";
-  const appendRow = buildThuChiAppendRow({ ngay, thu, chi, ghiChu: thuChiOne.note });
+  const appendRow = buildThuChiAppendRow({ ngay, thu, chi, ten: "", ghiChu: thuChiOne.note });
 
-  await sheetsValuesAppend(token, idMain, `'${SHEET_TC}'!A:D`, [appendRow], "USER_ENTERED");
+  await sheetsValuesAppend(token, idMain, `'${SHEET_TC}'!A:E`, [appendRow], "USER_ENTERED");
   await sheetsBatchUpdate(token, idMain, [{ range: `'${SHEET_TQ}'!A2:C2`, values: tqRow2 }]);
 }
 
