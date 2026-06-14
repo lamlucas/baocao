@@ -8,6 +8,8 @@ export type ThuChiCompareSourceRow = {
   ngay: string;
   thu: string | number;
   ten?: string;
+  /** Legacy / note-only: đại lý có thể nằm ở cột D (ghi chú) thay vì Tên. */
+  ghiChu?: string;
 };
 
 export type BaoCaoThuChiCompareRow = {
@@ -40,6 +42,17 @@ export function normalizeCompareTen(raw: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+/** Tên đại lý THU_CHI: ưu tiên cột D (Tên), fallback cột D/E ghi chú (legacy). */
+export function resolveThuChiCompareTen(row: { ten?: string; ghiChu?: string }): {
+  display: string;
+  norm: string;
+} {
+  const ten = String(row.ten ?? "").trim();
+  const ghiChu = String(row.ghiChu ?? "").trim();
+  const display = ten || ghiChu;
+  return { display, norm: normalizeCompareTen(display) };
 }
 
 function pickDisplayTen(prev: string | undefined, next: string): string {
@@ -101,7 +114,7 @@ function mapToRows(map: Map<string, Bucket>): BaoCaoThuChiCompareRow[] {
   return sortCompareRows(rows);
 }
 
-/** So sánh tổng thu cột I (BAO_CAO_TK) với Thu cột B (THU_CHI), khớp tên cột D (case-insensitive). */
+/** So sánh tổng thu cột I (BAO_CAO_TK) với Thu cột B (THU_CHI), khớp tên (D / ghi chú legacy). */
 export function buildBaoCaoThuChiCompareReport(
   baoCaoEntries: BaoCaoTkEntry[],
   thuChiRows: ThuChiCompareSourceRow[],
@@ -143,8 +156,7 @@ export function buildBaoCaoThuChiCompareReport(
   for (const r of thuChiRows) {
     const day = flexibleDateToIso(String(r.ngay ?? "").trim());
     if (!day || day.length < 7) continue;
-    const displayTen = String(r.ten ?? "").trim();
-    const norm = normalizeCompareTen(displayTen);
+    const { display: displayTen, norm } = resolveThuChiCompareTen(r);
     if (!norm) continue;
     const amount = typeof r.thu === "number" && Number.isFinite(r.thu) ? r.thu : num(String(r.thu ?? ""));
     if (amount === 0) continue;
@@ -169,6 +181,14 @@ export function buildBaoCaoThuChiCompareReport(
       const t = String(r.ten ?? "").trim();
       if (t && t !== "—") daiLySet.add(t);
     }
+  }
+  for (const r of thuChiRows) {
+    const { display } = resolveThuChiCompareTen(r);
+    if (display) daiLySet.add(display);
+  }
+  for (const e of baoCaoEntries) {
+    const t = String(e.tenKhach ?? "").trim();
+    if (t && t !== "—") daiLySet.add(t);
   }
 
   return {
