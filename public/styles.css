@@ -5,15 +5,15 @@
   --border: #2e3a49;
   --text: #e8eef5;
   --muted: #9aa8b6;
-  --accent: #e82d56;
-  --accent-dim: #b81e42;
-  --accent-rgb: 232, 45, 86;
+  --accent: #8f3a4f;
+  --accent-dim: #6b2a3a;
+  --accent-rgb: 143, 58, 79;
   --danger: #f07178;
   --radius: 12px;
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   --hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --hover-dur: 0.2s;
-  --hover-glow: 0 0 0 1px rgba(var(--accent-rgb), 0.35), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --hover-glow: 0 0 0 1px rgba(var(--accent-rgb), 0.22), 0 8px 24px rgba(0, 0, 0, 0.28);
   --hover-lift: translateY(-2px);
   font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -110,10 +110,6 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #f4f8fc;
-  text-shadow:
-    0 0 18px rgba(255, 45, 90, 0.4),
-    0 0 36px rgba(var(--accent-rgb), 0.28);
-  transition: text-shadow var(--hover-dur) var(--hover-ease);
 }
 
 .topbar-inner:not(.topbar-inner--app) .brand {
@@ -121,13 +117,7 @@ body {
 }
 
 .topbar:hover {
-  border-bottom-color: rgba(var(--accent-rgb), 0.28);
-}
-
-.topbar:hover .brand {
-  text-shadow:
-    0 0 22px rgba(255, 45, 90, 0.55),
-    0 0 44px rgba(var(--accent-rgb), 0.38);
+  border-bottom-color: rgba(var(--accent-rgb), 0.22);
 }
 
 .shell {
