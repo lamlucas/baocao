@@ -229,7 +229,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     const { headerRow: baoCaoTkHeader, bodyRows: baoCaoTkBody } = findBaoCaoTkDataStart(baoCaoTkMerged);
     const baoCaoTkEntries = parseBaoCaoTkSheetRows(baoCaoTkBody, baoCaoTkHeader);
     const reportChiTieu = buildChiTieuReport(baoCaoTkEntries, todayVn);
-    const reportBaoCaoThuChiCompare = buildBaoCaoThuChiCompareReport(baoCaoTkEntries, thuChiModels);
 
     const thuChiModels = thuChiData.map((r) => ({
       ngay: r[0] ?? "",
@@ -238,6 +237,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       ten: r[3] ?? "",
       ghiChu: r[4] ?? "",
     }));
+    const reportBaoCaoThuChiCompare = buildBaoCaoThuChiCompareReport(baoCaoTkEntries, thuChiModels);
 
     const hhLoaiTruRaw = batchMain[HH_LOAI_TRU_TAB] ?? [];
     let hhLoaiTruFormatted: unknown[][] = [];
