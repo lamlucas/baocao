@@ -154,6 +154,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       const baoCaoRanges = await sheetsBatchGetValueRanges(token, idDebt, [
         `'${SHEETS.bao_cao_tk}'!A1:A5000`,
         `'${SHEETS.bao_cao_tk}'!B1:B5000`,
+        `'${SHEETS.bao_cao_tk}'!D1:D5000`,
         `'${SHEETS.bao_cao_tk}'!H1:H5000`,
         `'${SHEETS.bao_cao_tk}'!I1:I5000`,
         `'${SHEETS.bao_cao_tk}'!L1:L5000`,
@@ -161,6 +162,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       baoCaoTkMerged = mergeBaoCaoTkColumnRanges({
         colA: baoCaoTkColValues(baoCaoRanges, "A"),
         colB: baoCaoTkColValues(baoCaoRanges, "B"),
+        colD: baoCaoTkColValues(baoCaoRanges, "D"),
         colH: baoCaoTkColValues(baoCaoRanges, "H"),
         colI: baoCaoTkColValues(baoCaoRanges, "I"),
         colL: baoCaoTkColValues(baoCaoRanges, "L"),

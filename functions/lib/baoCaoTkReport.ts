@@ -16,6 +16,12 @@ export type ChiTieuNguonTotals = {
   tongThu: number;
 };
 
+export type ChiTieuDaiLyTotals = {
+  daiLy: string;
+  tongTieu: number;
+  tongThu: number;
+};
+
 export type ChiTieuDayTotals = {
   date: string;
   tongTieu: number;
@@ -48,6 +54,7 @@ export type ChiTieuReport = {
     byMcc: ChiTieuMccGroup[];
   };
   nguonList: string[];
+  daiLyList: string[];
 };
 
 /** Ô B là tên MCC (không phải mã tài khoản ngắn). */
@@ -127,6 +134,8 @@ const STATUS_MARKERS = new Set(["DONE"]);
 export type BaoCaoTkColMap = {
   ngay: number;
   mcc: number;
+  /** Cột TÊN KHÁCH (D) — đại lý / khách. */
+  tenKhach: number;
   /** Cột QUY ĐỔI USD (H) — Tổng tiêu trên web. */
   tieuUsd: number;
   /** Cột TỔNG THU (I). */
@@ -134,10 +143,11 @@ export type BaoCaoTkColMap = {
   nguon: number;
 };
 
-/** Chỉ đọc A, B, H, I, L — gộp theo chỉ số dòng. */
+/** Chỉ đọc A, B, D, H, I, L — gộp theo chỉ số dòng. */
 export function mergeBaoCaoTkColumnRanges(parts: {
   colA: unknown[][];
   colB: unknown[][];
+  colD: unknown[][];
   colH: unknown[][];
   colI: unknown[][];
   colL: unknown[][];
@@ -145,6 +155,7 @@ export function mergeBaoCaoTkColumnRanges(parts: {
   const maxLen = Math.max(
     parts.colA.length,
     parts.colB.length,
+    parts.colD.length,
     parts.colH.length,
     parts.colI.length,
     parts.colL.length,
@@ -154,6 +165,7 @@ export function mergeBaoCaoTkColumnRanges(parts: {
     rows.push([
       parts.colA[i]?.[0] ?? "",
       parts.colB[i]?.[0] ?? "",
+      parts.colD[i]?.[0] ?? "",
       parts.colH[i]?.[0] ?? "",
       parts.colI[i]?.[0] ?? "",
       parts.colL[i]?.[0] ?? "",
@@ -168,13 +180,14 @@ export function baoCaoTkColValues(ranges: { range: string; values: unknown[][] }
   return hit?.values ?? [];
 }
 
-/** Map cột sau khi gộp A,B,H,I,L → [0,1,2,3,4]. */
+/** Map cột sau khi gộp A,B,D,H,I,L → [0,1,2,3,4,5]. */
 export const BAO_CAO_TK_SLIM_COLS: BaoCaoTkColMap = {
   ngay: 0,
   mcc: 1,
-  tieuUsd: 2,
-  tongThu: 3,
-  nguon: 4,
+  tenKhach: 2,
+  tieuUsd: 3,
+  tongThu: 4,
+  nguon: 5,
 };
 
 function normalizeHeaderLabel(h: string): string {
@@ -199,7 +212,7 @@ export function findBaoCaoTkDataStart(mergedRows: unknown[][]): { headerRow: unk
   return { headerRow: mergedRows[0] ?? [], bodyRows: mergedRows.length > 1 ? mergedRows.slice(1) : [] };
 }
 
-/** Xác nhận tiêu đề hàng 1 (chỉ A,B,H,I,L). */
+/** Xác nhận tiêu đề hàng 1 (chỉ A,B,D,H,I,L). */
 export function detectBaoCaoTkColumns(headerRow: unknown[]): BaoCaoTkColMap {
   const cols = { ...BAO_CAO_TK_SLIM_COLS };
   for (let i = 0; i < headerRow.length; i++) {
@@ -207,6 +220,8 @@ export function detectBaoCaoTkColumns(headerRow: unknown[]): BaoCaoTkColMap {
     if (!h) continue;
     if (h === "ngay" || h.startsWith("ngay")) cols.ngay = i;
     else if (h === "mcc") cols.mcc = i;
+    else if (h.includes("ten khach") || h.includes("tên khách") || h === "khach" || h === "khách")
+      cols.tenKhach = i;
     else if (h.includes("quy doi") || h.includes("quy đổi")) cols.tieuUsd = i;
     else if (h.includes("tong thu") || h.includes("tổng thu")) cols.tongThu = i;
     else if (h.includes("nguon") || h.includes("nguồn")) cols.nguon = i;
@@ -281,8 +296,9 @@ export function parseBaoCaoTkSheetRows(rawRows: unknown[][], headerRow?: unknown
     if (tieuUsd === 0 && iVal === 0) continue;
 
     const nguon = nguonCell || currentNguon || "—";
-    const key = `${currentDate}\0${bRaw}\0${nguon}`;
-    /** Cùng ngày + B + nguồn: cộng H/I từ mọi dòng tài khoản (cột C/D chỉ là chi tiết). */
+    const tenKhach = String(row[cols.tenKhach] ?? "").trim() || "—";
+    const key = `${currentDate}\0${bRaw}\0${nguon}\0${tenKhach}`;
+    /** Cùng ngày + B + nguồn + tên khách (D): cộng H/I từ mọi dòng tài khoản. */
     const prev = byDayMccNguon.get(key);
     if (prev) {
       prev.tongTieu += tieuUsd;
@@ -292,7 +308,7 @@ export function parseBaoCaoTkSheetRows(rawRows: unknown[][], headerRow?: unknown
         ngay: currentDate,
         mcc: bRaw,
         taiKhoan: "",
-        tenKhach: "",
+        tenKhach,
         tongTieu: tieuUsd,
         tongThu: iVal,
         nguon,
@@ -324,13 +340,16 @@ export function buildChiTieuReport(entries: BaoCaoTkEntry[], todayVn: string): C
   const byDayMap = new Map<string, Map<string, { tongTieu: number; tongThu: number }>>();
   const byMonthNguon = new Map<string, Map<string, { tongTieu: number; tongThu: number }>>();
   const nguonSet = new Set<string>();
+  const daiLySet = new Set<string>();
 
   for (const e of entries) {
     const day = e.ngay;
     if (!day) continue;
     const thang = day.slice(0, 7);
     const nguon = e.nguon || "—";
+    const daiLy = e.tenKhach || "—";
     nguonSet.add(nguon);
+    if (daiLy !== "—") daiLySet.add(daiLy);
 
     let dayNguon = byDayMap.get(day);
     if (!dayNguon) {
@@ -389,6 +408,7 @@ export function buildChiTieuReport(entries: BaoCaoTkEntry[], todayVn: string): C
       byMcc: groupMccForDay(todayRows),
     },
     nguonList: [...nguonSet].sort((a, b) => a.localeCompare(b, "vi")),
+    daiLyList: [...daiLySet].sort((a, b) => a.localeCompare(b, "vi")),
   };
 }
 

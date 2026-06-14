@@ -45,6 +45,7 @@ const state = {
   reportThuChiNguonFilter: "",
   chiTieuNav: { month: "", day: "" },
   chiTieuNguonFilter: "",
+  chiTieuDaiLyFilter: "",
 };
 
 function rowThuChi(r) {
@@ -565,9 +566,12 @@ function chiTieuAmount(v) {
 }
 
 function chiTieuFilteredEntries() {
-  const filter = state.chiTieuNguonFilter || "";
-  if (!filter) return state.baoCaoTk;
-  return state.baoCaoTk.filter((r) => (r.nguon || "—") === filter);
+  let rows = state.baoCaoTk;
+  const nguon = state.chiTieuNguonFilter || "";
+  const daiLy = state.chiTieuDaiLyFilter || "";
+  if (nguon) rows = rows.filter((r) => (r.nguon || "—") === nguon);
+  if (daiLy) rows = rows.filter((r) => (r.tenKhach || "—") === daiLy);
+  return rows;
 }
 
 function renderChiTieuByNguonFilter() {
@@ -730,6 +734,118 @@ function chiTieuByNguonForMonth(entries, month) {
   return [...map.values()].sort((a, b) => a.nguon.localeCompare(b.nguon, "vi"));
 }
 
+function chiTieuByDaiLyForMonth(entries, month) {
+  const map = new Map();
+  for (const e of entries) {
+    if (!chiTieuSameCalendarMonth(e.ngay, month)) continue;
+    const key = e.tenKhach || "—";
+    if (key === "—") continue;
+    const cur = map.get(key) ?? { daiLy: key, tongTieu: 0, tongThu: 0 };
+    cur.tongTieu += chiTieuAmount(e.tongTieu);
+    cur.tongThu += chiTieuAmount(e.tongThu);
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) => a.daiLy.localeCompare(b.daiLy, "vi"));
+}
+
+function renderChiTieuDaiLyMonthTable(tbodyEl, labelEl, monthIso, entries) {
+  if (state.chiTieuDaiLyFilter) {
+    if (tbodyEl) tbodyEl.innerHTML = "";
+    return;
+  }
+  if (labelEl) {
+    labelEl.textContent = monthIso ? `${formatMonthForDisplay(monthIso)} (GMT+7)` : "—";
+  }
+  if (!tbodyEl) return;
+  tbodyEl.innerHTML = "";
+  if (!monthIso) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="3" class="muted">Chọn tháng để xem theo đại lý.</td>`;
+    tbodyEl.appendChild(tr);
+    return;
+  }
+  const daiLyRows = chiTieuByDaiLyForMonth(entries, monthIso);
+  if (!daiLyRows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="3" class="muted">Chưa có dữ liệu trong ${escapeHtml(formatMonthForDisplay(monthIso))}.</td>`;
+    tbodyEl.appendChild(tr);
+    return;
+  }
+  for (const d of daiLyRows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(d.daiLy)}</td>
+      <td class="cell-num">${fmtChiTieuUsd(d.tongTieu)}</td>
+      <td class="cell-num">${fmtChiTieuUsd(d.tongThu)}</td>`;
+    tbodyEl.appendChild(tr);
+  }
+}
+
+function renderChiTieuByDaiLyFilter() {
+  const filter = state.chiTieuDaiLyFilter || "";
+  const wrap = $("#wrap-chi-tieu-by-dai-ly");
+  if (!wrap) return;
+
+  if (!filter) {
+    wrap.hidden = true;
+    for (const id of ["chi-tieu-month-dai-ly-heading", "chi-tieu-days-dai-ly-heading"]) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = false;
+    }
+    for (const sel of ["#table-chi-tieu-month-dai-ly", "#table-chi-tieu-days-dai-ly"]) {
+      const table = $(sel);
+      const block = table?.closest(".table-wrap");
+      if (block) block.hidden = false;
+    }
+    return;
+  }
+
+  wrap.hidden = false;
+  const labelEl = $("#chi-tieu-by-dai-ly-label");
+  const scopeEl = $("#chi-tieu-by-dai-ly-scope");
+  const tbody = $("#table-chi-tieu-by-dai-ly tbody");
+  const { month, day } = state.chiTieuNav;
+
+  for (const id of ["chi-tieu-month-dai-ly-heading", "chi-tieu-days-dai-ly-heading"]) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  }
+  for (const sel of ["#table-chi-tieu-month-dai-ly", "#table-chi-tieu-days-dai-ly"]) {
+    const table = $(sel);
+    const block = table?.closest(".table-wrap");
+    if (block) block.hidden = true;
+  }
+
+  if (labelEl) labelEl.textContent = filter;
+  if (scopeEl) scopeEl.textContent = chiTieuScopeLabel(month, day);
+
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  const rows = chiTieuEntriesForNguonView(chiTieuFilteredEntries(), month, day).sort((a, b) => {
+    const dc = String(a.ngay || "").localeCompare(String(b.ngay || ""));
+    if (dc !== 0) return dc;
+    return String(a.mcc || "").localeCompare(String(b.mcc || ""), "vi");
+  });
+
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="4" class="muted">Không có dữ liệu cho đại lý này.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="cell-readonly">${escapeHtml(formatDayForDisplay(r.ngay))}</td>
+      <td class="cell-readonly">${escapeHtml(r.mcc ?? "—")}</td>
+      <td class="cell-readonly cell-num">${fmtChiTieuUsd(chiTieuAmount(r.tongTieu))}</td>
+      <td class="cell-readonly cell-num">${fmtChiTieuUsd(chiTieuAmount(r.tongThu))}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
 function renderChiTieuNguonMonthTable(tbodyEl, labelEl, monthIso, entries) {
   if (state.chiTieuNguonFilter) {
     if (tbodyEl) tbodyEl.innerHTML = "";
@@ -786,6 +902,23 @@ function renderChiTieuMccTable(tbodyEl, groups) {
   }
 }
 
+function populateChiTieuDaiLyFilter() {
+  const sel = $("#chi-tieu-dai-ly-filter");
+  if (!sel) return;
+  const prev = state.chiTieuDaiLyFilter || "";
+  const fromApi = state.reportChiTieu?.daiLyList ?? [];
+  const fromEntries = [...new Set(state.baoCaoTk.map((r) => r.tenKhach).filter((t) => t && t !== "—"))];
+  const list = fromApi.length ? fromApi : fromEntries.sort((a, b) => a.localeCompare(b, "vi"));
+  sel.innerHTML = `<option value="">Tất cả đại lý</option>`;
+  for (const d of list) {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.textContent = d;
+    sel.appendChild(opt);
+  }
+  sel.value = prev;
+}
+
 function populateChiTieuNguonFilter() {
   const sel = $("#chi-tieu-nguon-filter");
   if (!sel) return;
@@ -822,6 +955,7 @@ function renderChiTieuToday() {
   if (elThu) elThu.textContent = `Tổng thu: ${fmtChiTieuUsd(totals.tongThu)}`;
   renderChiTieuMccTable($("#table-chi-tieu-today-mcc tbody"), groups);
   renderChiTieuByNguonFilter();
+  renderChiTieuByDaiLyFilter();
 }
 
 function renderChiTieuDrill() {
@@ -861,6 +995,12 @@ function renderChiTieuDrill() {
       currentMonthIsoVietnam(),
       entries,
     );
+    renderChiTieuDaiLyMonthTable(
+      $("#table-chi-tieu-month-dai-ly tbody"),
+      $("#chi-tieu-month-dai-ly-label"),
+      currentMonthIsoVietnam(),
+      entries,
+    );
   }
 
   const monthLabel = $("#chi-tieu-month-label");
@@ -885,6 +1025,12 @@ function renderChiTieuDrill() {
       month,
       entries,
     );
+    renderChiTieuDaiLyMonthTable(
+      $("#table-chi-tieu-days-dai-ly tbody"),
+      $("#chi-tieu-days-dai-ly-label"),
+      month,
+      entries,
+    );
   }
 
   const dayLabel = $("#chi-tieu-day-label");
@@ -901,6 +1047,7 @@ function renderChiTieuDrill() {
   }
 
   renderChiTieuByNguonFilter();
+  renderChiTieuByDaiLyFilter();
 }
 
 function cellMoneyDisplay(raw) {
@@ -1495,6 +1642,7 @@ function renderReport() {
   renderReportThuChiDrill();
   renderReportThuChiToday();
   populateChiTieuNguonFilter();
+  populateChiTieuDaiLyFilter();
   renderChiTieuToday();
   renderChiTieuDrill();
 }
@@ -1525,6 +1673,7 @@ function applyPayload(data, options = {}) {
     byMonth: [],
     todayVietnam: null,
     nguonList: [],
+    daiLyList: [],
   };
   state.reportLuongNv = data.reportLuongNv ?? {
     todayVietnam: "",
@@ -1733,6 +1882,12 @@ function bindToolbarAfterLogin() {
 
   $("#chi-tieu-nguon-filter")?.addEventListener("change", (ev) => {
     state.chiTieuNguonFilter = ev.target.value || "";
+    setChiTieuNav(state.chiTieuNav.month, state.chiTieuNav.day);
+    renderChiTieuToday();
+  });
+
+  $("#chi-tieu-dai-ly-filter")?.addEventListener("change", (ev) => {
+    state.chiTieuDaiLyFilter = ev.target.value || "";
     setChiTieuNav(state.chiTieuNav.month, state.chiTieuNav.day);
     renderChiTieuToday();
   });

@@ -131,20 +131,49 @@
                 <strong>BAO_CAO_TK</strong>. Bot nhóm Telegram <code>-1003992397667</code> ghi thêm dòng (MCC / Tài khoản / Tên).
               </p>
               <ul class="muted small bot-panel-list">
-                <li>Chỉ đọc cột <strong>A</strong> (Ngày), <strong>B</strong> (MCC), <strong>H</strong> (Quy đổi USD), <strong>I</strong> (Tổng thu), <strong>L</strong> (Nguồn).</li>
+                <li>Chỉ đọc cột <strong>A</strong> (Ngày), <strong>B</strong> (MCC), <strong>D</strong> (Tên khách), <strong>H</strong> (Quy đổi USD), <strong>I</strong> (Tổng thu), <strong>L</strong> (Nguồn).</li>
                 <li>Cột <strong>A</strong> = ngày (kể cả serial Sheet); cột <strong>B</strong> = MCC — cùng B = cùng MCC + nguồn.</li>
-                <li>Chỉ tính H/I khi cột B có dữ liệu; cùng ngày + B + nguồn (nhiều tài khoản) được <strong>cộng</strong> H/I thành một MCC.</li>
+                <li>Chỉ tính H/I khi cột B có dữ liệu; cùng ngày + B + nguồn + tên khách (D) được <strong>cộng</strong> H/I thành một MCC.</li>
                 <li>Chi tiết ngày: tổng tiêu/thu <strong>từng MCC</strong>; nguồn hiển thị cuối dòng.</li>
                 <li><strong>Lọc nguồn</strong>: hiển thị từng ngày có MCC — tổng tiêu/thu của nguồn đã chọn.</li>
+                <li><strong>Lọc đại lý</strong>: tổng tiêu/thu (H/I) theo <strong>tên khách</strong> cột D.</li>
               </ul>
             </div>
 
-            <label class="field chi-tieu-filter-field">
-              <span>Lọc theo nguồn</span>
-              <select id="chi-tieu-nguon-filter" class="input">
-                <option value="">Tất cả nguồn</option>
-              </select>
-            </label>
+            <div class="chi-tieu-filters">
+              <label class="field chi-tieu-filter-field">
+                <span>Lọc theo nguồn</span>
+                <select id="chi-tieu-nguon-filter" class="input">
+                  <option value="">Tất cả nguồn</option>
+                </select>
+              </label>
+              <label class="field chi-tieu-filter-field">
+                <span>Lọc theo đại lý</span>
+                <select id="chi-tieu-dai-ly-filter" class="input">
+                  <option value="">Tất cả đại lý</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="wrap-chi-tieu-by-dai-ly" hidden>
+              <h3 class="subsection-title">
+                Đại lý <strong id="chi-tieu-by-dai-ly-label">—</strong>
+              </h3>
+              <p class="muted small panel-guide" id="chi-tieu-by-dai-ly-scope"></p>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-by-dai-ly">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th>MCC</th>
+                      <th class="th-num">Tổng tiêu (H)</th>
+                      <th class="th-num">Tổng thu (I)</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
 
             <div id="wrap-chi-tieu-by-nguon" hidden>
               <h3 class="subsection-title">
@@ -220,6 +249,21 @@
                   <tbody></tbody>
                 </table>
               </div>
+              <h4 class="report-tc-nav-title" id="chi-tieu-month-dai-ly-heading" style="margin-top: 1rem">
+                Theo đại lý — <span id="chi-tieu-month-dai-ly-label">Tháng hiện tại (GMT+7)</span>
+              </h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-month-dai-ly">
+                  <thead>
+                    <tr>
+                      <th>Đại lý</th>
+                      <th class="th-num">Tổng tiêu</th>
+                      <th class="th-num">Tổng thu</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
             </div>
 
             <div id="wrap-chi-tieu-days" hidden>
@@ -249,6 +293,21 @@
                   <thead>
                     <tr>
                       <th>Nguồn</th>
+                      <th class="th-num">Tổng tiêu</th>
+                      <th class="th-num">Tổng thu</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <h4 class="report-tc-nav-title" id="chi-tieu-days-dai-ly-heading" style="margin-top: 1rem">
+                Theo đại lý — <span id="chi-tieu-days-dai-ly-label">—</span>
+              </h4>
+              <div class="table-wrap">
+                <table class="data-table data-table-aligned" id="table-chi-tieu-days-dai-ly">
+                  <thead>
+                    <tr>
+                      <th>Đại lý</th>
                       <th class="th-num">Tổng tiêu</th>
                       <th class="th-num">Tổng thu</th>
                     </tr>
