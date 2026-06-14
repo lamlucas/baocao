@@ -175,26 +175,24 @@ export function buildBaoCaoThuChiCompareReport(
     .filter((m) => m.rows.length > 0)
     .sort((a, b) => a.thang.localeCompare(b.thang));
 
-  const daiLySet = new Set<string>();
+  const daiLyMap = new Map<string, string>();
+  const addDaiLyName = (raw: string) => {
+    const display = String(raw ?? "").trim();
+    if (!display || display === "—") return;
+    const norm = normalizeCompareTen(display);
+    if (!norm) return;
+    daiLyMap.set(norm, pickDisplayTen(daiLyMap.get(norm), display));
+  };
   for (const m of byMonth) {
-    for (const r of m.rows) {
-      const t = String(r.ten ?? "").trim();
-      if (t && t !== "—") daiLySet.add(t);
-    }
+    for (const r of m.rows) addDaiLyName(r.ten);
   }
-  for (const r of thuChiRows) {
-    const { display } = resolveThuChiCompareTen(r);
-    if (display) daiLySet.add(display);
-  }
-  for (const e of baoCaoEntries) {
-    const t = String(e.tenKhach ?? "").trim();
-    if (t && t !== "—") daiLySet.add(t);
-  }
+  for (const r of thuChiRows) addDaiLyName(resolveThuChiCompareTen(r).display);
+  for (const e of baoCaoEntries) addDaiLyName(e.tenKhach ?? "");
 
   return {
     byMonth,
     byDay,
-    daiLyList: [...daiLySet].sort((a, b) => a.localeCompare(b, "vi")),
+    daiLyList: [...daiLyMap.values()].sort((a, b) => a.localeCompare(b, "vi")),
     monthList: byMonth.map((m) => m.thang),
   };
 }

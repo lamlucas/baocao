@@ -340,7 +340,7 @@ export function buildChiTieuReport(entries: BaoCaoTkEntry[], todayVn: string): C
   const byDayMap = new Map<string, Map<string, { tongTieu: number; tongThu: number }>>();
   const byMonthNguon = new Map<string, Map<string, { tongTieu: number; tongThu: number }>>();
   const nguonSet = new Set<string>();
-  const daiLySet = new Set<string>();
+  const daiLyMap = new Map<string, string>();
 
   for (const e of entries) {
     const day = e.ngay;
@@ -349,7 +349,11 @@ export function buildChiTieuReport(entries: BaoCaoTkEntry[], todayVn: string): C
     const nguon = e.nguon || "—";
     const daiLy = e.tenKhach || "—";
     nguonSet.add(nguon);
-    if (daiLy !== "—") daiLySet.add(daiLy);
+    if (daiLy !== "—") {
+      const norm = daiLy.trim().toLowerCase().replace(/\s+/g, " ");
+      const prev = daiLyMap.get(norm);
+      daiLyMap.set(norm, !prev || daiLy.length >= prev.length ? daiLy : prev);
+    }
 
     let dayNguon = byDayMap.get(day);
     if (!dayNguon) {
@@ -408,7 +412,7 @@ export function buildChiTieuReport(entries: BaoCaoTkEntry[], todayVn: string): C
       byMcc: groupMccForDay(todayRows),
     },
     nguonList: [...nguonSet].sort((a, b) => a.localeCompare(b, "vi")),
-    daiLyList: [...daiLySet].sort((a, b) => a.localeCompare(b, "vi")),
+    daiLyList: [...daiLyMap.values()].sort((a, b) => a.localeCompare(b, "vi")),
   };
 }
 

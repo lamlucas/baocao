@@ -459,6 +459,19 @@ function compareBcTcNormTen(raw) {
     .replace(/\s+/g, " ");
 }
 
+function uniqueCompareDaiLyNames(names) {
+  const map = new Map();
+  for (const raw of names) {
+    const display = String(raw ?? "").trim();
+    if (!display || display === "—") continue;
+    const norm = compareBcTcNormTen(display);
+    if (!norm) continue;
+    const prev = map.get(norm);
+    map.set(norm, !prev || display.length >= prev.length ? display : prev);
+  }
+  return [...map.values()].sort((a, b) => a.localeCompare(b, "vi"));
+}
+
 function filterCompareReport(raw, daiLyFilter) {
   const src = raw ?? { byMonth: [], byDay: [], daiLyList: [], monthList: [] };
   let byMonth = src.byMonth ?? [];
@@ -520,13 +533,11 @@ function populateCompareBcTcFilters() {
   }
 
   if (daiLySel) {
-    const list = raw.daiLyList?.length
-      ? raw.daiLyList
-      : [
-          ...new Set(
-            (raw.byMonth ?? []).flatMap((m) => (m.rows ?? []).map((r) => r.ten)).filter((t) => t && t !== "—"),
-          ),
-        ].sort((a, b) => a.localeCompare(b, "vi"));
+    const list = uniqueCompareDaiLyNames(
+      raw.daiLyList?.length
+        ? raw.daiLyList
+        : (raw.byMonth ?? []).flatMap((m) => (m.rows ?? []).map((r) => r.ten)),
+    );
     daiLySel.innerHTML = `<option value="">Tất cả đại lý</option>`;
     for (const d of list) {
       const opt = document.createElement("option");
@@ -855,7 +866,7 @@ function chiTieuFilteredEntries() {
   const nguon = state.chiTieuNguonFilter || "";
   const daiLy = state.chiTieuDaiLyFilter || "";
   if (nguon) rows = rows.filter((r) => (r.nguon || "—") === nguon);
-  if (daiLy) rows = rows.filter((r) => (r.tenKhach || "—") === daiLy);
+  if (daiLy) rows = rows.filter((r) => compareBcTcNormTen(r.tenKhach || "—") === compareBcTcNormTen(daiLy));
   return rows;
 }
 
@@ -1192,8 +1203,9 @@ function populateChiTieuDaiLyFilter() {
   if (!sel) return;
   const prev = state.chiTieuDaiLyFilter || "";
   const fromApi = state.reportChiTieu?.daiLyList ?? [];
-  const fromEntries = [...new Set(state.baoCaoTk.map((r) => r.tenKhach).filter((t) => t && t !== "—"))];
-  const list = fromApi.length ? fromApi : fromEntries.sort((a, b) => a.localeCompare(b, "vi"));
+  const list = uniqueCompareDaiLyNames(
+    fromApi.length ? fromApi : state.baoCaoTk.map((r) => r.tenKhach),
+  );
   sel.innerHTML = `<option value="">Tất cả đại lý</option>`;
   for (const d of list) {
     const opt = document.createElement("option");
