@@ -305,7 +305,7 @@ function thuChiRowsForDay(isoDay) {
   return state.thuChi.filter((r) => thuChiRowDayIso(r) === isoDay && thuChiRowHasData(r));
 }
 
-/** Khóa ghi chú (cột D) — không phân biệt hoa/thường. */
+/** Khóa tên khách (cột D) — không phân biệt hoa/thường. */
 function thuChiNguonNormKey(raw) {
   const t = String(raw ?? "").trim();
   if (!t) return "—";
@@ -313,7 +313,7 @@ function thuChiNguonNormKey(raw) {
 }
 
 function thuChiRowNguonNormKey(r) {
-  return thuChiNguonNormKey(r.ghiChu);
+  return thuChiNguonNormKey(r.ten);
 }
 
 function thuChiNguonDisplayLabel(normKey) {
@@ -321,7 +321,7 @@ function thuChiNguonDisplayLabel(normKey) {
   for (const r of state.thuChi) {
     if (!thuChiRowHasData(r)) continue;
     if (thuChiRowNguonNormKey(r) !== normKey) continue;
-    const raw = String(r.ghiChu ?? "").trim();
+    const raw = String(r.ten ?? "").trim();
     return formatDisplayLabel(raw || "—");
   }
   return normKey;
@@ -331,10 +331,11 @@ function thuChiNguonList() {
   const byNorm = new Map();
   for (const r of state.thuChi) {
     if (!thuChiRowHasData(r)) continue;
-    const raw = String(r.ghiChu ?? "").trim();
-    const label = raw || "—";
+    const raw = String(r.ten ?? "").trim();
+    if (!raw) continue;
     const norm = thuChiNguonNormKey(raw);
-    if (!byNorm.has(norm)) byNorm.set(norm, label);
+    const prev = byNorm.get(norm);
+    byNorm.set(norm, !prev || raw.length >= prev.length ? raw : prev);
   }
   return [...byNorm.entries()]
     .sort((a, b) => a[1].localeCompare(b[1], "vi"))
@@ -386,7 +387,7 @@ function populateReportThuChiNguonFilter() {
   if (!sel) return;
   const prev = state.reportThuChiNguonFilter || "";
   const list = thuChiNguonList();
-  sel.innerHTML = `<option value="">— Chọn nguồn —</option>`;
+  sel.innerHTML = `<option value="">— Chọn tên khách —</option>`;
   for (const { norm, label } of list) {
     const opt = document.createElement("option");
     opt.value = norm;
@@ -802,7 +803,7 @@ function renderReportThuChiDrill() {
     tbMonth.innerHTML = "";
     if (needNguon) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="3" class="muted">Chọn nguồn (ghi chú) để xem báo cáo.</td>`;
+      tr.innerHTML = `<td colspan="3" class="muted">Chọn tên khách (cột D) để xem báo cáo.</td>`;
       tbMonth.appendChild(tr);
     } else if (!byMonth.length) {
       const tr = document.createElement("tr");
