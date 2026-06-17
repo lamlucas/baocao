@@ -804,7 +804,7 @@ function renderReportThuChiDrill() {
     tbMonth.innerHTML = "";
     if (needNguon) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="3" class="muted">Chọn tên khách (cột D) để xem báo cáo.</td>`;
+      tr.innerHTML = `<td colspan="3" class="muted">Chọn tên khách để xem báo cáo.</td>`;
       tbMonth.appendChild(tr);
     } else if (!byMonth.length) {
       const tr = document.createElement("tr");
@@ -1713,7 +1713,7 @@ function renderChamCongNvTable() {
     const startDate = starts[tabName] || "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="cell-readonly">${escapeHtml(tabName)}${isTemplate ? ' <span class="muted small">(NV + mẫu)</span>' : ""}</td>
+      <td class="cell-readonly">${escapeHtml(tabName)}</td>
       <td>
         <input type="date" class="input input-sm cham-cong-nv-hh-start" data-cc-tab="${escapeAttr(tabName)}" value="${escapeAttr(startDate)}" title="Chỉ tính HH từ ngày này (THU_CHI)" />
       </td>
@@ -1904,7 +1904,7 @@ function renderLuongNv() {
           <strong>Cơ sở hoa hồng 1%:</strong>
           Thu ${cellMoneyDisplay(cb.tongThu)} − Chi ${cellMoneyDisplay(cb.tongChi)}
           ${exclTotal > 0 || exclChi > 0 ? ` (loại: ${exclParts.join("; ")})` : ""}
-          = Lợi nhuận ${cellMoneyDisplay(cb.profit)} → HH ${fmtChiTieuUsd(cb.commissionUsd)} / NV
+          = Lợi nhuận ${cellMoneyDisplay(cb.profit)} → HH ${fmtChiTieuUsd(cb.commissionUsd)}
         </div>
         <div class="table-wrap">
           <table class="data-table data-table-aligned" id="table-luong-nv-${idx}">
@@ -1912,13 +1912,13 @@ function renderLuongNv() {
               <tr>
                 <th>Nhân viên</th>
                 <th class="th-num">Ngày công</th>
-                <th class="th-num">Lương CB (USD)</th>
-                <th class="th-num">HH 1% (USD)</th>
-                <th class="th-num">Tiền phạt (USD)</th>
-                <th class="th-num">Thưởng (USD)</th>
-                <th class="th-num">Tổng lương (USD)</th>
-                <th class="th-num">Tiền ứng (C) (USD)</th>
-                <th class="th-num">Thực nhận (USD)</th>
+                <th class="th-num">Lương CB</th>
+                <th class="th-num">HH 1%</th>
+                <th class="th-num">Tiền phạt</th>
+                <th class="th-num">Thưởng</th>
+                <th class="th-num">Tổng lương</th>
+                <th class="th-num">Tiền ứng</th>
+                <th class="th-num">Thực nhận</th>
               </tr>
             </thead>
             <tbody>${emptyRow}</tbody>

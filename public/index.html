@@ -346,7 +346,7 @@
 
           <div class="tab-panel" data-panel="luong_nv" role="tabpanel" hidden>
             <h2 class="section-title">Lương NV</h2>
-            <div class="bot-panel panel-guide" id="panel-luong-nv-info">
+            <div class="bot-panel panel-guide" id="panel-luong-nv-info" hidden>
               <h3 class="subsection-title">Cách tính lương</h3>
               <ul class="muted small bot-panel-list">
                 <li>
@@ -440,7 +440,7 @@
             <section class="luong-nv-cham-cong" id="section-cham-cong-nv" hidden>
               <div id="section-cham-cong-nv-body">
                 <h3 class="subsection-title">Tab nhân viên chấm công</h3>
-                <p class="muted small panel-guide">
+                <p class="muted small panel-guide" hidden>
                   Tab <strong>SUBEO</strong> vừa tính lương như nhân viên, vừa là mẫu copy tab mới (A ngày, B chấm công, C tiền ứng, D phạt, E thưởng,
                   <strong>F2 tỉ giá</strong>). Ngày bắt đầu hưởng hoa hồng lưu tab <strong>CAU_HINH</strong> (cột A tab, B ngày) — bot chỉ tính HH từ ngày đó.
                   Qua ngày mới: cài Apps Script
@@ -475,8 +475,8 @@
 
             <section class="luong-nv-exclusions" id="section-hh-loai-tru" hidden>
               <div id="section-hh-loai-tru-body">
-              <h3 class="subsection-title">Loại trừ hoa hồng (tab HH_LOAI_TRU — file MAIN)</h3>
-              <p class="muted small panel-guide">
+              <h3 class="subsection-title">Loại trừ hoa hồng</h3>
+              <p class="muted small panel-guide" hidden>
                 Lưu trên file <strong>MAIN</strong> (cùng file THU_CHI), tab <strong>HH_LOAI_TRU</strong>: cột
                 <strong>A Ngày</strong>, <strong>B Khoản thu</strong>, <strong>C Khoản chi</strong>,
                 <strong>D Tên</strong>, <strong>E Note</strong>.
@@ -491,11 +491,11 @@
                     <input type="date" id="hh-loai-tru-ngay" class="input" required />
                   </label>
                   <label class="field">
-                    <span>Khoản thu (USD)</span>
+                    <span>Khoản thu</span>
                     <input type="text" id="hh-loai-tru-thu" class="input" inputmode="decimal" placeholder="Để trống nếu chỉ loại chi" />
                   </label>
                   <label class="field">
-                    <span>Khoản chi (USD)</span>
+                    <span>Khoản chi</span>
                     <input type="text" id="hh-loai-tru-chi" class="input" inputmode="decimal" placeholder="VD: 4120 — banking, ứng NV" />
                   </label>
                   <label class="field">
@@ -512,7 +512,7 @@
                   <button type="button" class="btn ghost" id="btn-hh-loai-tru-reload">Tải lại từ Sheet</button>
                   <button type="button" class="btn primary" id="btn-hh-loai-tru-save">Lưu danh sách</button>
                 </div>
-                <p class="muted small">
+                <p class="muted small" hidden>
                   «Lưu danh sách» chỉ <strong>thêm dòng mới</strong> xuống Sheet (không xóa dòng cũ) — giữ lịch sử đối chiếu HH từng tháng.
                   Ghi số thu/chi dạng giá trị thuần (RAW) — <strong>giữ nguyên định dạng số</strong> cột B/C đã cài trên Sheet.
                   Cần ít nhất <strong>Tên</strong> hoặc <strong>Note</strong>.
@@ -602,7 +602,7 @@
                 </button>
               </div>
               <label class="field thu-chi-nguon-filter-field" id="wrap-report-thu-chi-nguon-filter" hidden>
-                <span>Chọn tên khách (cột D)</span>
+                <span>Chọn tên khách</span>
                 <select id="report-thu-chi-nguon-filter" class="input">
                   <option value="">— Chọn tên khách —</option>
                 </select>
@@ -694,8 +694,8 @@
               </table>
             </div>
 
-            <h3 class="subsection-title">So sánh BAO_CAO_TK ↔ THU_CHI</h3>
-            <p class="muted small panel-guide">
+            <h3 class="subsection-title">Kiểm tra thu chi thực tế</h3>
+            <p class="muted small panel-guide" hidden>
               Tổng thu cột <strong>I</strong> (BAO_CAO_TK) so với Thu cột <strong>B</strong> (THU_CHI). Khớp tên đại lý:
               cột <strong>D</strong> BAO_CAO_TK ↔ cột <strong>D Tên</strong> hoặc <strong>ghi chú</strong> THU_CHI (không phân biệt hoa thường).
               Chênh &lt; 1 US$ coi là khớp.
