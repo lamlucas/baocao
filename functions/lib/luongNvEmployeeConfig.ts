@@ -133,3 +133,17 @@ export function commissionStartMapForTabs(
   }
   return out;
 }
+
+/** Parse CAU_HINH từ dữ liệu đã batchGet (tránh đọc Sheet thêm lần nữa). */
+export function commissionStartMapFromRows(rows: unknown[][]): CommissionStartByEmployee {
+  const out: CommissionStartByEmployee = {};
+  const start = rows.length > 0 && String(rows[0]?.[0] ?? "").toLowerCase().includes("tab") ? 1 : 0;
+  for (let i = start; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    const name = String(row[0] ?? "").trim();
+    const date = normalizeCommissionStartDate(row[1]);
+    if (!name || !date) continue;
+    out[normTabKey(name)] = date;
+  }
+  return out;
+}

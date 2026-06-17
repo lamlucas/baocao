@@ -5,6 +5,46 @@ type ServiceAccount = {
 
 let cachedToken: { token: string; exp: number } | null = null;
 
+/** Khoảng cách tối thiểu giữa các batchGet (tránh burst 429). */
+let lastBatchGetAt = 0;
+const MIN_BATCH_GET_GAP_MS = 120;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function throttleBatchGet(): Promise<void> {
+  const now = Date.now();
+  const wait = MIN_BATCH_GET_GAP_MS - (now - lastBatchGetAt);
+  if (wait > 0) await sleep(wait);
+  lastBatchGetAt = Date.now();
+}
+
+function isRateLimitError(message: string): boolean {
+  return /429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED/i.test(message);
+}
+
+export async function sheetsBatchGetWithRetry(
+  accessToken: string,
+  spreadsheetId: string,
+  ranges: string[],
+  valueRenderOption: "UNFORMATTED_VALUE" | "FORMATTED_VALUE" | "FORMULA" = "UNFORMATTED_VALUE",
+  maxAttempts = 4,
+): Promise<Record<string, unknown[][]>> {
+  let attempt = 0;
+  while (true) {
+    attempt += 1;
+    try {
+      await throttleBatchGet();
+      return await sheetsBatchGet(accessToken, spreadsheetId, ranges, valueRenderOption);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!isRateLimitError(msg) || attempt >= maxAttempts) throw e;
+      await sleep(800 * attempt * attempt);
+    }
+  }
+}
+
 function parseSa(json: string): ServiceAccount {
   const o = JSON.parse(json) as ServiceAccount;
   if (!o.client_email || !o.private_key) throw new Error("Invalid service account JSON");
@@ -161,21 +201,55 @@ export async function sheetsBatchGetMergeSafe(
 ): Promise<SheetsBatchGetResult> {
   const data: Record<string, unknown[][]> = {};
   const errors: SheetsBatchGetResult["errors"] = [];
-  await Promise.all(
-    ranges.map(async (range) => {
-      const raw = (range.split("!")[0] ?? "").replace(/^'+|'+$/g, "");
-      if (!raw) return;
+  const validRanges = ranges
+    .map((r) => String(r ?? "").trim())
+    .filter((r) => r.length > 0);
+  if (!validRanges.length) return { data, errors };
+
+  const sheetKey = (range: string) => (range.split("!")[0] ?? "").replace(/^'+|'+$/g, "");
+
+  try {
+    const batch = await sheetsBatchGetWithRetry(
+      accessToken,
+      spreadsheetId,
+      validRanges,
+      valueRenderOption,
+    );
+    for (const range of validRanges) {
+      const key = sheetKey(range);
+      if (!key) continue;
+      data[key] = batch[key] ?? [];
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[Sheets] batch ${spreadsheetId} (${validRanges.length} ranges): ${msg}`);
+    if (validRanges.length === 1) {
+      const range = validRanges[0]!;
+      const key = sheetKey(range);
+      errors.push({ spreadsheetId, range, message: msg });
+      if (key) data[key] = [];
+      return { data, errors };
+    }
+    for (const range of validRanges) {
+      const key = sheetKey(range);
+      if (!key) continue;
       try {
-        const part = await sheetsBatchGet(accessToken, spreadsheetId, [range], valueRenderOption);
-        data[raw] = part[raw] ?? [];
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[Sheets] ${spreadsheetId} ${range}: ${msg}`);
-        errors.push({ spreadsheetId, range, message: msg });
-        data[raw] = [];
+        const part = await sheetsBatchGetWithRetry(
+          accessToken,
+          spreadsheetId,
+          [range],
+          valueRenderOption,
+          2,
+        );
+        data[key] = part[key] ?? [];
+      } catch (inner) {
+        const innerMsg = inner instanceof Error ? inner.message : String(inner);
+        console.error(`[Sheets] ${spreadsheetId} ${range}: ${innerMsg}`);
+        errors.push({ spreadsheetId, range, message: innerMsg });
+        data[key] = [];
       }
-    }),
-  );
+    }
+  }
   return { data, errors };
 }
 

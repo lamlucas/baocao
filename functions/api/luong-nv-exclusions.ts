@@ -29,10 +29,8 @@ async function readHhLoaiTruFromSheet(
   spreadsheetId: string,
 ): Promise<HhLoaiTruRule[]> {
   const range = hhLoaiTruRange();
-  const [rawBatch, fmtBatch] = await Promise.all([
-    sheetsBatchGetMergeSafe(token, spreadsheetId, [range], "UNFORMATTED_VALUE"),
-    sheetsBatchGetMergeSafe(token, spreadsheetId, [range], "FORMATTED_VALUE"),
-  ]);
+  const rawBatch = await sheetsBatchGetMergeSafe(token, spreadsheetId, [range], "UNFORMATTED_VALUE");
+  const fmtBatch = await sheetsBatchGetMergeSafe(token, spreadsheetId, [range], "FORMATTED_VALUE");
   return parseHhLoaiTruSheetRows(
     rawBatch.data[HH_LOAI_TRU_TAB] ?? [],
     fmtBatch.data[HH_LOAI_TRU_TAB] ?? [],

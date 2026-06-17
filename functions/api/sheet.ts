@@ -9,15 +9,17 @@ import {
 import { HH_LOAI_TRU_TAB, parseHhLoaiTruSheetRows } from "../lib/hhLoaiTru";
 import {
   listChamCongEmployeeTabs,
-  readTyGiaF2,
 } from "../lib/chamCongSheet";
 import { ensureTodayDateRowsAllTabs } from "../lib/chamCongDateRoll";
 import { syncAdvanceCarryToFirstDayAllTabs } from "../lib/tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "../lib/luongNvConfig";
-import { loadCommissionStartByEmployee } from "../lib/luongNvEmployeeConfig";
+import {
+  CAU_HINH_TAB,
+  commissionStartMapFromRows,
+} from "../lib/luongNvEmployeeConfig";
+import { appendSheetErrorLog, logSheetRangeError, readSheetErrorLog, parseHttpStatusFromMessage } from "../lib/sheetErrorLog";
 import {
   buildLuongNvReport,
-  filterAttendanceSheetTitles,
   type AttendanceSheetRows,
 } from "../lib/luongNvReport";
 import {
@@ -84,26 +86,56 @@ function quoteSheetTitle(title: string): string {
   return `'${title.replace(/'/g, "''")}'`;
 }
 
-async function loadAttendanceSheets(
+async function loadChamCongBatch(
   token: string,
   spreadsheetId: string,
-): Promise<AttendanceSheetRows[]> {
+): Promise<{
+  employeeTitles: string[];
+  attendanceSheets: AttendanceSheetRows[];
+  commissionStartByEmployee: import("../lib/luongNvEmployeeConfig").CommissionStartByEmployee;
+  tyGia: number;
+  tyGiaSourceTab: string;
+  errors: { spreadsheetId: string; range: string; message: string }[];
+}> {
   let titles: string[] = [];
   try {
-    titles = filterAttendanceSheetTitles(await sheetsListTabTitles(token, spreadsheetId));
+    titles = await sheetsListTabTitles(token, spreadsheetId);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`[Sheets] ${spreadsheetId} metadata: ${msg}`);
-    return [];
+    throw new Error(`metadata: ${msg}`);
   }
-  if (!titles.length) return [];
 
-  const ranges = titles.map((t) => `${quoteSheetTitle(t)}!A1:F400`);
-  const { data: batch } = await sheetsBatchGetMergeSafe(token, spreadsheetId, ranges);
-  return titles.map((sheetTitle) => ({
+  const employeeTitles = listChamCongEmployeeTabs(titles);
+  const hasCauHinh = titles.some((t) => t.toLowerCase() === CAU_HINH_TAB.toLowerCase());
+  const ranges = [
+    ...employeeTitles.map((t) => `${quoteSheetTitle(t)}!A1:F400`),
+    ...(hasCauHinh ? [`${quoteSheetTitle(CAU_HINH_TAB)}!A1:B500`] : []),
+  ];
+
+  const { data: batch, errors } = await sheetsBatchGetMergeSafe(token, spreadsheetId, ranges);
+  const commissionStartByEmployee = hasCauHinh
+    ? commissionStartMapFromRows(batch[CAU_HINH_TAB] ?? [])
+    : {};
+
+  const attendanceSheets = employeeTitles.map((sheetTitle) => ({
     sheetTitle,
     rows: batch[sheetTitle] ?? [],
   }));
+
+  const tyGiaCandidates = [CHAM_CONG_TEMPLATE_TAB, "SU_BEO", ...employeeTitles];
+  let tyGia = 0;
+  let tyGiaSourceTab = CHAM_CONG_TEMPLATE_TAB;
+  for (const tab of tyGiaCandidates) {
+    const rows = batch[tab] ?? [];
+    const v = num(rows[1]?.[5]);
+    if (v > 0) {
+      tyGia = v;
+      tyGiaSourceTab = tab;
+      break;
+    }
+  }
+
+  return { employeeTitles, attendanceSheets, commissionStartByEmployee, tyGia, tyGiaSourceTab, errors };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -144,6 +176,9 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       `${quoteSheetTitle(HH_LOAI_TRU_TAB)}!A1:E500`,
     ]);
     sheetErrors.push(...batchMainResult.errors);
+    for (const err of batchMainResult.errors) {
+      await logSheetRangeError(env, "api/sheet:main", err.spreadsheetId, err.range, err.message);
+    }
     const batchMain = batchMainResult.data;
 
     const batchDebtCnResult = await sheetsBatchGetMergeSafe(token, idDebt, [
@@ -242,7 +277,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
     const hhLoaiTruRaw = batchMain[HH_LOAI_TRU_TAB] ?? [];
     let hhLoaiTruFormatted: unknown[][] = [];
-    try {
+    if (hhLoaiTruRaw.length > 0) {
       const hhFmt = await sheetsBatchGetMergeSafe(
         token,
         idMain,
@@ -250,50 +285,36 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         "FORMATTED_VALUE",
       );
       sheetErrors.push(...hhFmt.errors);
+      for (const err of hhFmt.errors) {
+        await logSheetRangeError(env, "api/sheet:hh-formatted", err.spreadsheetId, err.range, err.message);
+      }
       hhLoaiTruFormatted = hhFmt.data[HH_LOAI_TRU_TAB] ?? [];
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(`[Sheets] ${idMain} HH_LOAI_TRU formatted: ${msg}`);
     }
     const hhLoaiTru = parseHhLoaiTruSheetRows(hhLoaiTruRaw, hhLoaiTruFormatted);
 
     let luongNvConfig = buildLuongNvConfig(0, CHAM_CONG_TEMPLATE_TAB);
-    try {
-      const idChamCong = spreadsheetIdChamCong(env);
-      let tyGia = 0;
-      let sourceTab = CHAM_CONG_TEMPLATE_TAB;
-      const tyGiaTabs = [CHAM_CONG_TEMPLATE_TAB, "SU_BEO"];
-      for (const tab of tyGiaTabs) {
-        const v = await readTyGiaF2(token, idChamCong, tab);
-        if (v > 0) {
-          tyGia = v;
-          sourceTab = tab;
-          break;
-        }
-      }
-      if (tyGia <= 0) {
-        const titles = await sheetsListTabTitles(token, idChamCong);
-        for (const t of listChamCongEmployeeTabs(titles)) {
-          const v = await readTyGiaF2(token, idChamCong, t);
-          if (v > 0) {
-            tyGia = v;
-            sourceTab = t;
-            break;
-          }
-        }
-      }
-      luongNvConfig = buildLuongNvConfig(tyGia, sourceTab);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(`[Sheets] ty gia F2: ${msg}`);
-    }
-
     let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
     try {
       const idChamCong = spreadsheetIdChamCong(env);
-      const commissionStartByEmployee = await loadCommissionStartByEmployee(token, idChamCong);
-      await ensureTodayDateRowsAllTabs(token, idChamCong);
-      let attendanceSheets = await loadAttendanceSheets(token, idChamCong);
+      const chamBatch = await loadChamCongBatch(token, idChamCong);
+      sheetErrors.push(...chamBatch.errors);
+      for (const err of chamBatch.errors) {
+        await logSheetRangeError(env, "api/sheet:cham-cong", err.spreadsheetId, err.range, err.message);
+      }
+
+      luongNvConfig = buildLuongNvConfig(chamBatch.tyGia, chamBatch.tyGiaSourceTab);
+
+      const preloaded = new Map(
+        chamBatch.attendanceSheets.map((s) => [s.sheetTitle, s.rows] as const),
+      );
+      const roll = await ensureTodayDateRowsAllTabs(token, idChamCong, undefined, preloaded);
+      let attendanceSheets = chamBatch.attendanceSheets;
+      if (roll.rowsAdded > 0) {
+        const reloaded = await loadChamCongBatch(token, idChamCong);
+        attendanceSheets = reloaded.attendanceSheets;
+        sheetErrors.push(...reloaded.errors);
+      }
+
       attendanceSheets = await syncAdvanceCarryToFirstDayAllTabs(
         token,
         idChamCong,
@@ -302,8 +323,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         todayVn,
         hhLoaiTru,
         luongNvConfig,
-        () => loadAttendanceSheets(token, idChamCong),
-        commissionStartByEmployee,
+        async () => (await loadChamCongBatch(token, idChamCong)).attendanceSheets,
+        chamBatch.commissionStartByEmployee,
       );
       reportLuongNv = buildLuongNvReport(
         attendanceSheets,
@@ -311,17 +332,26 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         todayVn,
         hhLoaiTru,
         luongNvConfig,
-        commissionStartByEmployee,
+        chamBatch.commissionStartByEmployee,
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[Sheets] cham cong: ${msg}`);
+      await appendSheetErrorLog(env, {
+        source: "api/sheet:cham-cong",
+        spreadsheetId: spreadsheetIdChamCong(env),
+        range: "cham-cong",
+        message: msg,
+        status: parseHttpStatusFromMessage(msg),
+      });
       sheetErrors.push({
         spreadsheetId: spreadsheetIdChamCong(env),
         range: "cham-cong",
         message: msg,
       });
     }
+
+    const recentErrorLog = await readSheetErrorLog(env);
 
     return jsonResponse({
       balance: {
@@ -381,6 +411,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           chamCong: spreadsheetIdChamCong(env),
         },
         errors: sheetErrors,
+        recentErrorLog,
         counts: {
           thuChi: thuChiData.length,
           coc: cocData.length,

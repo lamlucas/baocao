@@ -1652,7 +1652,7 @@ async function saveChamCongNvCommissionStart(tabName, dateIso) {
     if (dateIso) state.chamCongNvCommissionStart[tabName] = dateIso;
     else delete state.chamCongNvCommissionStart[tabName];
     setChamCongNvStatus(res.message || "Đã lưu.", "ok");
-    await fetchSheetAndApply({ force: true });
+    await fetchSheetAndApply({ force: true, silent: true });
   } catch (e) {
     setChamCongNvStatus(e.message || "Lỗi lưu ngày HH.", "err");
     await loadChamCongNvTabs();
@@ -2133,12 +2133,30 @@ async function api(path, opts = {}) {
   return json;
 }
 
+function truncateSheetError(msg) {
+  const s = String(msg ?? "");
+  if (s.length <= 180) return s;
+  return `${s.slice(0, 177)}…`;
+}
+
 function setSyncStatus(msg, kind) {
   const el = $("#sync-status");
   if (!el) return;
   el.textContent = msg || "";
   el.classList.remove("ok", "err");
   if (kind) el.classList.add(kind);
+}
+
+function appendClientSheetErrorLog(entry) {
+  const key = "sheetErrorLog";
+  try {
+    const prev = JSON.parse(localStorage.getItem(key) || "[]");
+    const list = Array.isArray(prev) ? prev : [];
+    list.push({ ...entry, at: entry.at || new Date().toISOString() });
+    localStorage.setItem(key, JSON.stringify(list.slice(-30)));
+  } catch {
+    /* ignore */
+  }
 }
 
 function showSheetDiagnostics(diag) {
@@ -2152,11 +2170,29 @@ function showSheetDiagnostics(diag) {
   if (!errors.length && !allEmpty) return;
   if (errors.length) {
     const first = errors[0];
+    const is429 = /429|RESOURCE_EXHAUSTED|RATE_LIMIT/i.test(String(first?.message ?? ""));
     const hint = first?.message?.includes("403")
       ? " — chia sẻ Google Sheet cho email service account (quyền Editor)."
-      : "";
+      : is429
+        ? " — vượt giới hạn đọc Google Sheet (60/phút). Đợi ~1 phút, tắt Tự động, rồi Làm mới."
+        : "";
+    for (const err of errors) {
+      appendClientSheetErrorLog({
+        range: err.range,
+        message: err.message,
+        spreadsheetId: err.spreadsheetId,
+      });
+    }
+    const recent = diag.recentErrorLog ?? [];
+    if (recent.length) {
+      try {
+        localStorage.setItem("sheetErrorLogServer", JSON.stringify(recent.slice(-30)));
+      } catch {
+        /* ignore */
+      }
+    }
     setSyncStatus(
-      `Lỗi đọc Sheet (${errors.length}): ${first?.range ?? "?"} — ${first?.message ?? "?"}${hint}`,
+      `Lỗi đọc Sheet (${errors.length}): ${first?.range ?? "?"} — ${truncateSheetError(first?.message ?? "?")}${hint}`,
       "err",
     );
     return;
@@ -2215,7 +2251,7 @@ function startAutoPoll() {
     } catch {
       /* bỏ qua lỗi mạng từng lần */
     }
-  }, 45000);
+  }, 90000);
 }
 
 function bindToolbarAfterLogin() {

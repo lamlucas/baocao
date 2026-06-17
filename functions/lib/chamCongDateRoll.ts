@@ -276,17 +276,70 @@ export async function ensureTodayDateRowsAllTabs(
   accessToken: string,
   spreadsheetId: string,
   unixSec?: number,
+  preloaded?: Map<string, unknown[][]>,
 ): Promise<{ tabs: number; rowsAdded: number }> {
-  const titles = listChamCongEmployeeTabs(await sheetsListTabTitles(accessToken, spreadsheetId));
+  const titles = listChamCongEmployeeTabs(
+    preloaded
+      ? [...preloaded.keys()]
+      : await sheetsListTabTitles(accessToken, spreadsheetId),
+  );
   let rowsAdded = 0;
   for (const tab of titles) {
     if (isChamCongSystemTab(tab)) continue;
     try {
-      rowsAdded += await ensureTodayDateRowsForTab(accessToken, spreadsheetId, tab, unixSec);
+      const rows = preloaded?.get(tab);
+      if (rows) {
+        rowsAdded += await ensureTodayDateRowsForTabWithRows(
+          accessToken,
+          spreadsheetId,
+          tab,
+          rows,
+          unixSec,
+        );
+      } else {
+        rowsAdded += await ensureTodayDateRowsForTab(accessToken, spreadsheetId, tab, unixSec);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[ChamCong] roll dates ${tab}: ${msg}`);
     }
   }
   return { tabs: titles.length, rowsAdded };
+}
+
+async function ensureTodayDateRowsForTabWithRows(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+  rows: unknown[][],
+  unixSec?: number,
+): Promise<number> {
+  const today = todayParts(unixSec);
+  if (today.y <= 0) return 0;
+  if (dateExistsInRows(rows, today)) return 0;
+
+  const last = findLastDateInRows(rows);
+  const toAdd = datesToAddUntilToday(last, today);
+  if (!toAdd.length) return 0;
+
+  let insertAfter = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const p = parseVietnamDateCell(rows[i]?.[0]);
+    if (p) {
+      insertAfter = i + 1;
+      break;
+    }
+  }
+  if (insertAfter <= 0) {
+    for (let i = 0; i < rows.length; i++) {
+      if (isChamCongHeaderRow(rows[i] ?? [])) {
+        insertAfter = i + 1;
+        break;
+      }
+    }
+  }
+  if (insertAfter <= 0) insertAfter = 1;
+
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, rows, insertAfter, toAdd);
+  return toAdd.length;
 }
