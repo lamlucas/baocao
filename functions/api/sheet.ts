@@ -14,6 +14,7 @@ import {
 import { ensureTodayDateRowsAllTabs } from "../lib/chamCongDateRoll";
 import { syncAdvanceCarryToFirstDayAllTabs } from "../lib/tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "../lib/luongNvConfig";
+import { loadCommissionStartByEmployee } from "../lib/luongNvEmployeeConfig";
 import {
   buildLuongNvReport,
   filterAttendanceSheetTitles,
@@ -290,6 +291,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
     try {
       const idChamCong = spreadsheetIdChamCong(env);
+      const commissionStartByEmployee = await loadCommissionStartByEmployee(token, idChamCong);
       await ensureTodayDateRowsAllTabs(token, idChamCong);
       let attendanceSheets = await loadAttendanceSheets(token, idChamCong);
       attendanceSheets = await syncAdvanceCarryToFirstDayAllTabs(
@@ -301,6 +303,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         hhLoaiTru,
         luongNvConfig,
         () => loadAttendanceSheets(token, idChamCong),
+        commissionStartByEmployee,
       );
       reportLuongNv = buildLuongNvReport(
         attendanceSheets,
@@ -308,6 +311,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         todayVn,
         hhLoaiTru,
         luongNvConfig,
+        commissionStartByEmployee,
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

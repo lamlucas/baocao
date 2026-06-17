@@ -7,6 +7,7 @@ import {
 import { ensureTodayDateRowsAllTabs } from "./chamCongDateRoll";
 import { syncAdvanceCarryToFirstDayAllTabs } from "./tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "./luongNvConfig";
+import { loadCommissionStartByEmployee } from "./luongNvEmployeeConfig";
 import {
   buildLuongNvReport,
   filterAttendanceSheetTitles,
@@ -172,6 +173,7 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     }
   }
   const luongNvConfig = buildLuongNvConfig(tyGia, sourceTab);
+  const commissionStartByEmployee = await loadCommissionStartByEmployee(token, idChamCong);
 
   await ensureTodayDateRowsAllTabs(token, idChamCong);
   let attendanceSheets = await loadAttendanceSheets(token, idChamCong);
@@ -184,6 +186,7 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     hhLoaiTru,
     luongNvConfig,
     () => loadAttendanceSheets(token, idChamCong),
+    commissionStartByEmployee,
   );
 
   const report = buildLuongNvReport(
@@ -192,6 +195,7 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     todayVn,
     hhLoaiTru,
     luongNvConfig,
+    commissionStartByEmployee,
   );
   const previousPeriod = report.periods.find((p) => p.kind === "previous");
   if (!previousPeriod) {

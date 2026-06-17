@@ -442,7 +442,8 @@
                 <h3 class="subsection-title">Tab nhân viên chấm công</h3>
                 <p class="muted small panel-guide">
                   Tab <strong>SUBEO</strong> vừa tính lương như nhân viên, vừa là mẫu copy tab mới (A ngày, B chấm công, C tiền ứng, D phạt, E thưởng,
-                  <strong>F2 tỉ giá</strong>). Qua ngày mới: cài Apps Script
+                  <strong>F2 tỉ giá</strong>). Ngày bắt đầu hưởng hoa hồng lưu tab <strong>CAU_HINH</strong> (cột A tab, B ngày) — bot chỉ tính HH từ ngày đó.
+                  Qua ngày mới: cài Apps Script
                   <code>scripts/CHAM-CONG-APPS-SCRIPT.gs</code> → menu <strong>Chấm công</strong> →
                   <strong>Bật tự thêm ngày mới mỗi ngày</strong> (kéo dòng ngày trong Bảng). Web cũng tự thêm khi tải dữ liệu.
                 </p>
@@ -462,6 +463,7 @@
                     <thead>
                       <tr>
                         <th>Tab Sheet</th>
+                        <th>Ngày bắt đầu HH</th>
                         <th></th>
                       </tr>
                     </thead>

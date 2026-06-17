@@ -39,6 +39,7 @@ const state = {
   hhLoaiTruDirty: false,
   chamCongNvTabs: [],
   chamCongNvTemplate: "SUBEO",
+  chamCongNvCommissionStart: {},
   selectedChamCongNvTab: "",
   reportThuChiNav: { month: "", day: "" },
   reportThuChiMode: "monthly",
@@ -1634,9 +1635,27 @@ async function loadChamCongNvTabs() {
     const res = await api("/api/cham-cong-employees");
     state.chamCongNvTabs = res.employees ?? [];
     state.chamCongNvTemplate = res.templateTab ?? "SUBEO";
+    state.chamCongNvCommissionStart = res.commissionStartByTab ?? {};
     renderChamCongNvTable();
   } catch (e) {
     setChamCongNvStatus(e.message || "Không tải được danh sách tab.", "err");
+  }
+}
+
+async function saveChamCongNvCommissionStart(tabName, dateIso) {
+  setChamCongNvStatus("Đang lưu ngày HH…");
+  try {
+    const res = await api("/api/cham-cong-employees", {
+      method: "PUT",
+      body: JSON.stringify({ tabName, commissionStartDate: dateIso || "" }),
+    });
+    if (dateIso) state.chamCongNvCommissionStart[tabName] = dateIso;
+    else delete state.chamCongNvCommissionStart[tabName];
+    setChamCongNvStatus(res.message || "Đã lưu.", "ok");
+    await fetchSheetAndApply({ force: true });
+  } catch (e) {
+    setChamCongNvStatus(e.message || "Lỗi lưu ngày HH.", "err");
+    await loadChamCongNvTabs();
   }
 }
 
@@ -1683,22 +1702,34 @@ function renderChamCongNvTable() {
   const list = state.chamCongNvTabs ?? [];
   if (!list.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="2" class="muted">Chưa có tab nhân viên trên file chấm công.</td>`;
+    tr.innerHTML = `<td colspan="3" class="muted">Chưa có tab nhân viên trên file chấm công.</td>`;
     tb.appendChild(tr);
     return;
   }
   const tpl = (state.chamCongNvTemplate || "SUBEO").toLowerCase();
+  const starts = state.chamCongNvCommissionStart ?? {};
   list.forEach((tabName) => {
     const isTemplate = tabName.toLowerCase() === tpl;
+    const startDate = starts[tabName] || "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="cell-readonly">${escapeHtml(tabName)}${isTemplate ? ' <span class="muted small">(NV + mẫu)</span>' : ""}</td>
+      <td>
+        <input type="date" class="input input-sm cham-cong-nv-hh-start" data-cc-tab="${escapeAttr(tabName)}" value="${escapeAttr(startDate)}" title="Chỉ tính HH từ ngày này (THU_CHI)" />
+      </td>
       <td class="cell-readonly">${
         isTemplate
           ? '<span class="muted small">Không xóa</span>'
           : `<button type="button" class="btn ghost btn-sm" data-cc-del="${escapeAttr(tabName)}">Xóa</button>`
       }</td>`;
     tb.appendChild(tr);
+  });
+  tb.querySelectorAll(".cham-cong-nv-hh-start").forEach((input) => {
+    input.addEventListener("change", () => {
+      const tab = input.getAttribute("data-cc-tab");
+      if (!tab) return;
+      void saveChamCongNvCommissionStart(tab, input.value || "");
+    });
   });
   tb.querySelectorAll("[data-cc-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -1841,12 +1872,16 @@ function renderLuongNv() {
               emp.thucNhanUsd ??
               emp.totalSalaryUsd ??
               tongLuong - ung;
+            const hhStart = emp.commissionStartDate || "";
+            const hhTitle = hhStart
+              ? ` title="HH tính từ ${formatDayForDisplay(hhStart)}"`
+              : "";
             return `
         <tr>
           <td class="cell-readonly">${escapeHtml(emp.name ?? "")}</td>
           <td class="cell-readonly cell-num">${escapeHtml(String(emp.workingDays ?? 0))} / ${escapeHtml(String(period.daysInMonth ?? "—"))}</td>
           <td class="cell-readonly cell-num">${fmtChiTieuUsd(base)}</td>
-          <td class="cell-readonly cell-num">${fmtChiTieuUsd(emp.commissionUsd)}</td>
+          <td class="cell-readonly cell-num"${hhTitle}>${fmtChiTieuUsd(emp.commissionUsd)}</td>
           <td class="cell-readonly cell-num">${phat > 0 ? fmtChiTieuUsd(phat) : "—"}</td>
           <td class="cell-readonly cell-num">${thuong > 0 ? fmtChiTieuUsd(thuong) : "—"}</td>
           <td class="cell-readonly cell-num luong-nv-total"><strong>${fmtChiTieuUsd(tongLuong)}</strong></td>
