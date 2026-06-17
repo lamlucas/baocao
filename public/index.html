@@ -368,7 +368,7 @@
                   <strong>Tháng hiện tại:</strong> ngày công và hoa hồng chỉ tính tới hôm nay (GMT+7).
                 </li>
                 <li>
-                  <strong>Hoa hồng 1%:</strong> (Tổng thu − Tổng chi) × 1% trên tab THU_CHI; khoản loại trừ cấu hình trên tab
+                  <strong>Hoa hồng 1%:</strong> (Tổng thu − Tổng chi) × 1% trên tab THU_CHI. Ngày không chấm công (cột B) thì <strong>không tính thu</strong> ngày đó vào HH; khoản loại trừ cấu hình trên tab
                   <strong>HH_LOAI_TRU</strong> (file MAIN).
                 </li>
                 <li>
@@ -469,46 +469,6 @@
                     </thead>
                     <tbody></tbody>
                   </table>
-                </div>
-
-                <div class="luong-nv-hh-off-section">
-                  <h3 class="subsection-title">Ngày nghỉ / off — loại trừ HH</h3>
-                  <p class="muted small">
-                    Chọn nhân viên và ngày nghỉ: <strong>toàn bộ thu chi ngày đó</strong> không tính vào hoa hồng của NV đó.
-                    Lưu tab <strong>HH_NGAY_OFF</strong> (file chấm công).
-                  </p>
-                  <form id="form-hh-ngay-off" class="form-stack luong-nv-excl-form">
-                    <div class="luong-nv-excl-grid">
-                      <label class="field">
-                        <span>Nhân viên</span>
-                        <select id="hh-ngay-off-nv" class="input" required>
-                          <option value="">— Chọn nhân viên —</option>
-                        </select>
-                      </label>
-                      <label class="field">
-                        <span>Ngày nghỉ / off</span>
-                        <input type="date" id="hh-ngay-off-ngay" class="input input-date" required title="Chọn ngày trên lịch" />
-                      </label>
-                    </div>
-                    <div class="toolbar-actions">
-                      <button type="submit" class="btn ghost" id="btn-hh-ngay-off-add">Thêm ngày</button>
-                      <button type="button" class="btn ghost" id="btn-hh-ngay-off-reload">Tải lại từ Sheet</button>
-                      <button type="button" class="btn primary" id="btn-hh-ngay-off-save">Lưu danh sách</button>
-                    </div>
-                    <p id="hh-ngay-off-status" class="status" aria-live="polite"></p>
-                  </form>
-                  <div class="table-wrap">
-                    <table class="data-table data-table-aligned" id="table-hh-ngay-off">
-                      <thead>
-                        <tr>
-                          <th>Nhân viên</th>
-                          <th>Ngày nghỉ / off</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
                 </div>
               </div>
             </section>

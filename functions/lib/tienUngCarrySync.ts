@@ -2,9 +2,9 @@ import type { HhLoaiTruRule } from "./hhLoaiTru";
 import { sheetsPutValues } from "./google";
 import type { LuongNvConfig } from "./luongNvConfig";
 import { commissionStartForTab, type CommissionStartByEmployee } from "./luongNvEmployeeConfig";
-import { offDaysForTab, type HhNgayOffByEmployee } from "./hhNgayOff";
 import {
   computeAdvanceCarryOutForMonth,
+  datesWithoutAttendanceInMonth,
   type AttendanceSheetRows,
   type ThuChiRow,
 } from "./luongNvReport";
@@ -60,7 +60,6 @@ export async function syncAdvanceCarryToFirstDayAllTabs(
   config: LuongNvConfig,
   reloadSheets: () => Promise<AttendanceSheetRows[]>,
   commissionStartByEmployee: CommissionStartByEmployee = {},
-  hhNgayOffByEmployee: HhNgayOffByEmployee = {},
 ): Promise<AttendanceSheetRows[]> {
   const currentMonth = todayIso.slice(0, 7);
   const previousMonth = previousMonthIso(currentMonth);
@@ -74,7 +73,7 @@ export async function syncAdvanceCarryToFirstDayAllTabs(
       hhLoaiTruRules,
       config,
       commissionStartForTab(commissionStartByEmployee, sheet.sheetTitle),
-      offDaysForTab(hhNgayOffByEmployee, sheet.sheetTitle),
+      datesWithoutAttendanceInMonth(sheet.rows, previousMonth, null),
     );
     const rowIdx = findRowIndexForMonthDay(sheet.rows, currentMonth, 1);
     if (rowIdx == null) continue;

@@ -8,7 +8,6 @@ import { ensureTodayDateRowsAllTabs } from "./chamCongDateRoll";
 import { syncAdvanceCarryToFirstDayAllTabs } from "./tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "./luongNvConfig";
 import { loadCommissionStartByEmployee } from "./luongNvEmployeeConfig";
-import { loadHhNgayOffList, hhNgayOffMapFromRows } from "./hhNgayOff";
 import {
   buildLuongNvReport,
   filterAttendanceSheetTitles,
@@ -175,10 +174,6 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
   }
   const luongNvConfig = buildLuongNvConfig(tyGia, sourceTab);
   const commissionStartByEmployee = await loadCommissionStartByEmployee(token, idChamCong);
-  const hhNgayOffList = await loadHhNgayOffList(token, idChamCong);
-  const hhNgayOffByEmployee = hhNgayOffMapFromRows(
-    hhNgayOffList.map((e) => [e.tabName, e.ngay]),
-  );
 
   await ensureTodayDateRowsAllTabs(token, idChamCong);
   let attendanceSheets = await loadAttendanceSheets(token, idChamCong);
@@ -192,7 +187,6 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     luongNvConfig,
     () => loadAttendanceSheets(token, idChamCong),
     commissionStartByEmployee,
-    hhNgayOffByEmployee,
   );
 
   const report = buildLuongNvReport(
@@ -202,7 +196,6 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     hhLoaiTru,
     luongNvConfig,
     commissionStartByEmployee,
-    hhNgayOffByEmployee,
   );
   const previousPeriod = report.periods.find((p) => p.kind === "previous");
   if (!previousPeriod) {

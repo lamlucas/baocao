@@ -17,7 +17,6 @@ import {
   CAU_HINH_TAB,
   commissionStartMapFromRows,
 } from "../lib/luongNvEmployeeConfig";
-import { HH_NGAY_OFF_TAB, hhNgayOffMapFromRows, offDaysForTab } from "../lib/hhNgayOff";
 import { appendSheetErrorLog, logSheetRangeError, readSheetErrorLog, parseHttpStatusFromMessage } from "../lib/sheetErrorLog";
 import {
   buildLuongNvReport,
@@ -94,7 +93,6 @@ async function loadChamCongBatch(
   employeeTitles: string[];
   attendanceSheets: AttendanceSheetRows[];
   commissionStartByEmployee: import("../lib/luongNvEmployeeConfig").CommissionStartByEmployee;
-  hhNgayOffByEmployee: import("../lib/hhNgayOff").HhNgayOffByEmployee;
   tyGia: number;
   tyGiaSourceTab: string;
   errors: { spreadsheetId: string; range: string; message: string }[];
@@ -109,19 +107,14 @@ async function loadChamCongBatch(
 
   const employeeTitles = listChamCongEmployeeTabs(titles);
   const hasCauHinh = titles.some((t) => t.toLowerCase() === CAU_HINH_TAB.toLowerCase());
-  const hasHhNgayOff = titles.some((t) => t.toLowerCase() === HH_NGAY_OFF_TAB.toLowerCase());
   const ranges = [
     ...employeeTitles.map((t) => `${quoteSheetTitle(t)}!A1:F400`),
     ...(hasCauHinh ? [`${quoteSheetTitle(CAU_HINH_TAB)}!A1:B500`] : []),
-    ...(hasHhNgayOff ? [`${quoteSheetTitle(HH_NGAY_OFF_TAB)}!A1:B500`] : []),
   ];
 
   const { data: batch, errors } = await sheetsBatchGetMergeSafe(token, spreadsheetId, ranges);
   const commissionStartByEmployee = hasCauHinh
     ? commissionStartMapFromRows(batch[CAU_HINH_TAB] ?? [])
-    : {};
-  const hhNgayOffByEmployee = hasHhNgayOff
-    ? hhNgayOffMapFromRows(batch[HH_NGAY_OFF_TAB] ?? [])
     : {};
 
   const attendanceSheets = employeeTitles.map((sheetTitle) => ({
@@ -142,7 +135,7 @@ async function loadChamCongBatch(
     }
   }
 
-  return { employeeTitles, attendanceSheets, commissionStartByEmployee, hhNgayOffByEmployee, tyGia, tyGiaSourceTab, errors };
+  return { employeeTitles, attendanceSheets, commissionStartByEmployee, tyGia, tyGiaSourceTab, errors };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -301,7 +294,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
     let luongNvConfig = buildLuongNvConfig(0, CHAM_CONG_TEMPLATE_TAB);
     let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
-    let hhNgayOff: { tabName: string; ngay: string }[] = [];
     try {
       const idChamCong = spreadsheetIdChamCong(env);
       const chamBatch = await loadChamCongBatch(token, idChamCong);
@@ -333,7 +325,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         luongNvConfig,
         async () => (await loadChamCongBatch(token, idChamCong)).attendanceSheets,
         chamBatch.commissionStartByEmployee,
-        chamBatch.hhNgayOffByEmployee,
       );
       reportLuongNv = buildLuongNvReport(
         attendanceSheets,
@@ -342,10 +333,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         hhLoaiTru,
         luongNvConfig,
         chamBatch.commissionStartByEmployee,
-        chamBatch.hhNgayOffByEmployee,
-      );
-      hhNgayOff = chamBatch.employeeTitles.flatMap((tab) =>
-        offDaysForTab(chamBatch.hhNgayOffByEmployee, tab).map((ngay) => ({ tabName: tab, ngay })),
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -417,7 +404,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       reportBaoCaoThuChiCompare,
       reportLuongNv,
       hhLoaiTru,
-      hhNgayOff,
       sheetDiagnostics: {
         spreadsheetIds: {
           main: idMain,

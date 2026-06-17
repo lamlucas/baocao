@@ -1106,12 +1106,6 @@ body {
   background: rgba(var(--accent-rgb), 0.14);
 }
 
-.luong-nv-hh-off-section {
-  margin-top: 1.75rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--border);
-}
-
 .luong-nv-exclusions {
   margin-bottom: 2rem;
 }
