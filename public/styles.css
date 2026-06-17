@@ -771,7 +771,7 @@ body {
 }
 
 .table-wrap {
-  overflow-x: auto;
+  overflow-x: visible;
   -webkit-overflow-scrolling: touch;
   max-width: 100%;
   border: 1px solid var(--border);
@@ -821,31 +821,44 @@ body {
   text-align: right;
 }
 
-/** Căn cột số — header khớp dữ liệu (desktop); mobile dùng auto layout. */
+/** Căn cột số — cột 1 cố định, các cột còn lại chia đều; header thẳng hàng số liệu. */
 .data-table-aligned {
   table-layout: fixed;
   width: 100%;
-}
-
-.data-table-aligned th:nth-child(1),
-.data-table-aligned td:nth-child(1) {
-  width: 28%;
-  min-width: 5.5rem;
-}
-
-.data-table-aligned th.th-num,
-.data-table-aligned td.cell-num {
-  width: 22%;
-  min-width: 4.75rem;
+  font-size: 0.8125rem;
 }
 
 .data-table-aligned th,
 .data-table-aligned td {
   vertical-align: middle;
+  padding: 0.35rem 0.5rem;
+  min-width: 0;
 }
 
 .data-table-aligned thead th {
   border-bottom: 1px solid var(--border);
+  text-transform: none;
+}
+
+.data-table-aligned th:nth-child(1),
+.data-table-aligned td:nth-child(1) {
+  width: 20%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table-aligned th.th-num,
+.data-table-aligned td.cell-num,
+.data-table-aligned td.cell-readonly.cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.table-wrap.table-wrap-fit {
+  overflow: visible;
 }
 
 .data-table tbody tr {
@@ -1351,6 +1364,12 @@ body {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  padding-right: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+.data-table thead th.th-num .th-sort-btn {
+  padding-right: 0;
 }
 
 .th-sort-btn {
@@ -1414,9 +1433,6 @@ body {
     margin-left: -0.15rem;
     margin-right: -0.15rem;
     border-radius: 10px;
-  }
-
-  .table-wrap.table-wrap-fit {
     overflow-x: auto;
   }
 

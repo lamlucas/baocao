@@ -817,8 +817,8 @@ function renderReportThuChiDrill() {
         tr.dataset.month = String(r.thang);
         tr.innerHTML = `
           <td>${escapeHtml(formatMonthForDisplay(r.thang))}</td>
-          <td class="cell-num">${fmtMoney(r.tongThu ?? 0)}</td>
-          <td class="cell-num">${fmtMoney(r.tongChi ?? 0)}</td>`;
+          <td class="cell-num">${fmtChiTieuUsd(r.tongThu ?? 0)}</td>
+          <td class="cell-num">${fmtChiTieuUsd(r.tongChi ?? 0)}</td>`;
         tbMonth.appendChild(tr);
       }
     }
@@ -844,8 +844,8 @@ function renderReportThuChiDrill() {
         tr.dataset.day = String(r.date);
         tr.innerHTML = `
           <td>${escapeHtml(formatDayForDisplay(r.date))}</td>
-          <td class="cell-num">${fmtMoney(r.tongThu ?? 0)}</td>
-          <td class="cell-num">${fmtMoney(r.tongChi ?? 0)}</td>`;
+          <td class="cell-num">${fmtChiTieuUsd(r.tongThu ?? 0)}</td>
+          <td class="cell-num">${fmtChiTieuUsd(r.tongChi ?? 0)}</td>`;
         tbDays.appendChild(tr);
       }
     }
@@ -862,8 +862,8 @@ function renderReportThuChiDrill() {
     const tChi = rep?.tongChi ?? totals.chi;
     const elThu = $("#report-tc-day-thu");
     const elChi = $("#report-tc-day-chi");
-    if (elThu) elThu.textContent = `Tổng thu: ${fmtMoney(tThu)}`;
-    if (elChi) elChi.textContent = `Tổng chi: ${fmtMoney(tChi)}`;
+    if (elThu) elThu.textContent = `Tổng thu: ${fmtChiTieuUsd(tThu)}`;
+    if (elChi) elChi.textContent = `Tổng chi: ${fmtChiTieuUsd(tChi)}`;
     renderThuChiDetailTable($("#table-report-tc-detail tbody"), dayRows);
   }
 }
@@ -880,8 +880,8 @@ function renderReportThuChiToday() {
   const tThu = typeof rtc?.tongThu === "number" && Number.isFinite(rtc.tongThu) ? rtc.tongThu : totals.thu;
   const tChi = typeof rtc?.tongChi === "number" && Number.isFinite(rtc.tongChi) ? rtc.tongChi : totals.chi;
   if (rtl) rtl.textContent = formatDayForDisplay(iso);
-  if (rtthu) rtthu.textContent = `Tổng thu: ${fmtMoney(tThu)}`;
-  if (rtchi) rtchi.textContent = `Tổng chi: ${fmtMoney(tChi)}`;
+  if (rtthu) rtthu.textContent = `Tổng thu: ${fmtChiTieuUsd(tThu)}`;
+  if (rtchi) rtchi.textContent = `Tổng chi: ${fmtChiTieuUsd(tChi)}`;
   renderThuChiDetailTable($("#table-report-tc-today tbody"), rows);
 }
 
@@ -1396,11 +1396,11 @@ function renderChiTieuDrill() {
 
 function cellMoneyDisplay(raw) {
   if (raw == null || raw === "") return "—";
-  if (typeof raw === "number" && Number.isFinite(raw)) return fmtMoney(raw);
+  if (typeof raw === "number" && Number.isFinite(raw)) return fmtChiTieuUsd(raw);
   const str = String(raw).trim();
   if (!str) return "—";
   const n = parseNumClient(str);
-  return fmtMoney(n);
+  return fmtChiTieuUsd(n);
 }
 
 function renderThuChi() {
