@@ -229,6 +229,33 @@ body {
   cursor: default;
 }
 
+.input-date {
+  cursor: pointer;
+  color-scheme: dark;
+  min-height: 2.35rem;
+}
+
+.input-date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.85;
+  filter: invert(0.85);
+}
+
+.input-date:focus {
+  cursor: pointer;
+}
+
+.luong-nv-exclusions .input-date,
+.luong-nv-cham-cong .input-date {
+  width: 100%;
+  max-width: 11rem;
+}
+
+.data-table .input-date {
+  min-width: 9.5rem;
+  max-width: 11rem;
+}
+
 .btn {
   font: inherit;
   cursor: pointer;

@@ -292,6 +292,43 @@ function flexibleDateToIsoClient(input) {
   return core;
 }
 
+/** Ô ngày chỉ mở lịch chọn — không gõ tay. */
+function bindDateOnlyInput(input) {
+  if (!input || input.type !== "date" || input.dataset.dateBound === "1") return;
+  input.dataset.dateBound = "1";
+  input.classList.add("input-date");
+  const openPicker = () => {
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        /* Safari / một số trình duyệt */
+      }
+    }
+    input.focus();
+  };
+  input.addEventListener("click", openPicker);
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Tab" || ev.key === "Shift" || ev.key === "Escape") return;
+    if (
+      input.dataset.allowClear === "1" &&
+      (ev.key === "Backspace" || ev.key === "Delete")
+    ) {
+      input.value = "";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      ev.preventDefault();
+      return;
+    }
+    ev.preventDefault();
+  });
+  input.addEventListener("beforeinput", (ev) => ev.preventDefault());
+}
+
+function enhanceDateInputs(root = document) {
+  root.querySelectorAll('input[type="date"]').forEach((el) => bindDateOnlyInput(el));
+}
+
 function thuChiRowDayIso(r) {
   return flexibleDateToIsoClient(r.ngay);
 }
@@ -1470,15 +1507,29 @@ function renderHhLoaiTruTable() {
   }
   list.forEach((row, idx) => {
     const tr = document.createElement("tr");
-    const ngayShow = row.ngayDisplay?.trim() ? row.ngayDisplay.trim() : formatDayForDisplay(row.ngay ?? "");
+    const ngayIso = flexibleDateToIsoClient(row.ngay ?? row.ngayDisplay ?? "");
     tr.innerHTML = `
-      <td class="cell-readonly">${escapeHtml(ngayShow)}</td>
+      <td>
+        <input type="date" class="input input-sm input-date" data-hh-ngay="${idx}" value="${escapeAttr(ngayIso)}" title="Chọn ngày loại trừ" />
+      </td>
       <td class="cell-readonly cell-num">${hhLoaiTruAmountCell(row, "thu")}</td>
       <td class="cell-readonly cell-num">${hhLoaiTruAmountCell(row, "chi")}</td>
       <td class="cell-readonly">${displayLabel(row.tenDaiLy ?? "")}</td>
       <td class="cell-readonly">${escapeHtml(row.note ?? "")}</td>
       <td class="cell-readonly"><button type="button" class="btn ghost btn-sm" data-hh-del="${idx}">Xóa</button></td>`;
     tb.appendChild(tr);
+  });
+  tb.querySelectorAll("[data-hh-ngay]").forEach((input) => {
+    bindDateOnlyInput(input);
+    input.addEventListener("change", () => {
+      const i = Number(input.getAttribute("data-hh-ngay"));
+      if (!Number.isFinite(i) || !state.hhLoaiTru?.[i]) return;
+      const iso = (input.value ?? "").trim();
+      if (!iso) return;
+      state.hhLoaiTru[i].ngay = iso;
+      state.hhLoaiTru[i].ngayDisplay = "";
+      state.hhLoaiTruDirty = true;
+    });
   });
   tb.querySelectorAll("[data-hh-del]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1501,7 +1552,10 @@ function setHhLoaiTruStatus(msg, kind) {
 
 function resetHhLoaiTruFormDefaults() {
   const ngay = $("#hh-loai-tru-ngay");
-  if (ngay) ngay.value = todayIsoVietnam();
+  if (ngay) {
+    ngay.value = todayIsoVietnam();
+    bindDateOnlyInput(ngay);
+  }
   const ten = $("#hh-loai-tru-ten");
   if (ten) ten.value = "";
   const note = $("#hh-loai-tru-note");
@@ -1715,7 +1769,7 @@ function renderChamCongNvTable() {
     tr.innerHTML = `
       <td class="cell-readonly">${escapeHtml(tabName)}</td>
       <td>
-        <input type="date" class="input input-sm cham-cong-nv-hh-start" data-cc-tab="${escapeAttr(tabName)}" value="${escapeAttr(startDate)}" title="Chỉ tính HH từ ngày này (THU_CHI)" />
+        <input type="date" class="input input-sm input-date cham-cong-nv-hh-start" data-cc-tab="${escapeAttr(tabName)}" data-allow-clear="1" value="${escapeAttr(startDate)}" title="Chọn ngày bắt đầu HH (THU_CHI)" />
       </td>
       <td class="cell-readonly">${
         isTemplate
@@ -1725,6 +1779,7 @@ function renderChamCongNvTable() {
     tb.appendChild(tr);
   });
   tb.querySelectorAll(".cham-cong-nv-hh-start").forEach((input) => {
+    bindDateOnlyInput(input);
     input.addEventListener("change", () => {
       const tab = input.getAttribute("data-cc-tab");
       if (!tab) return;
