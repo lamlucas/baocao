@@ -40,6 +40,8 @@ const state = {
   chamCongNvTabs: [],
   chamCongNvTemplate: "SUBEO",
   chamCongNvCommissionStart: {},
+  hhNgayOff: [],
+  hhNgayOffDirty: false,
   selectedChamCongNvTab: "",
   reportThuChiNav: { month: "", day: "" },
   reportThuChiMode: "monthly",
@@ -1661,6 +1663,159 @@ function bindHhLoaiTruForm() {
   });
 }
 
+function setHhNgayOffStatus(msg, kind) {
+  const el = $("#hh-ngay-off-status");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.classList.remove("ok", "err");
+  if (kind) el.classList.add(kind);
+}
+
+function renderHhNgayOffNvSelect() {
+  const sel = $("#hh-ngay-off-nv");
+  if (!sel) return;
+  const prev = sel.value;
+  const list = state.chamCongNvTabs ?? [];
+  sel.innerHTML = `<option value="">— Chọn nhân viên —</option>${list
+    .map(
+      (tab) =>
+        `<option value="${escapeAttr(tab)}"${tab === prev ? " selected" : ""}>${escapeHtml(tab)}</option>`,
+    )
+    .join("")}`;
+}
+
+function renderHhNgayOffTable() {
+  renderHhNgayOffNvSelect();
+  const tb = tbody("table-hh-ngay-off");
+  if (!tb) return;
+  tb.innerHTML = "";
+  const list = state.hhNgayOff ?? [];
+  if (!list.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="3" class="muted">Chưa có ngày nghỉ/off — chọn nhân viên, ngày và bấm Lưu.</td>`;
+    tb.appendChild(tr);
+    return;
+  }
+  list.forEach((row, idx) => {
+    const tr = document.createElement("tr");
+    const ngayIso = flexibleDateToIsoClient(row.ngay ?? row.ngayDisplay ?? "");
+    tr.innerHTML = `
+      <td class="cell-readonly">${escapeHtml(row.tabName ?? "")}</td>
+      <td>
+        <input type="date" class="input input-sm input-date" data-hh-off-ngay="${idx}" value="${escapeAttr(ngayIso)}" title="Chọn ngày nghỉ/off" />
+      </td>
+      <td class="cell-readonly"><button type="button" class="btn ghost btn-sm" data-hh-off-del="${idx}">Xóa</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("[data-hh-off-ngay]").forEach((input) => {
+    bindDateOnlyInput(input);
+    input.addEventListener("change", () => {
+      const i = Number(input.getAttribute("data-hh-off-ngay"));
+      if (!Number.isFinite(i) || !state.hhNgayOff?.[i]) return;
+      const iso = (input.value ?? "").trim();
+      if (!iso) return;
+      state.hhNgayOff[i].ngay = iso;
+      state.hhNgayOff[i].ngayDisplay = "";
+      state.hhNgayOffDirty = true;
+    });
+  });
+  tb.querySelectorAll("[data-hh-off-del]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.getAttribute("data-hh-off-del"));
+      if (!Number.isFinite(i)) return;
+      state.hhNgayOff = (state.hhNgayOff ?? []).filter((_, j) => j !== i);
+      state.hhNgayOffDirty = true;
+      renderHhNgayOffTable();
+    });
+  });
+}
+
+function resetHhNgayOffFormDefaults() {
+  const ngay = $("#hh-ngay-off-ngay");
+  if (ngay) {
+    ngay.value = todayIsoVietnam();
+    bindDateOnlyInput(ngay);
+  }
+}
+
+function readHhNgayOffFormRow() {
+  const tabName = ($("#hh-ngay-off-nv")?.value ?? "").trim();
+  const ngay = ($("#hh-ngay-off-ngay")?.value ?? "").trim();
+  if (!tabName || !ngay) return null;
+  const dup = (state.hhNgayOff ?? []).some(
+    (r) =>
+      String(r.tabName ?? "").toLowerCase() === tabName.toLowerCase() &&
+      flexibleDateToIsoClient(r.ngay) === ngay,
+  );
+  if (dup) return null;
+  return { tabName, ngay };
+}
+
+function tryAppendHhNgayOffFormRow() {
+  const row = readHhNgayOffFormRow();
+  if (!row) return false;
+  state.hhNgayOff = [...(state.hhNgayOff ?? []), row].sort(
+    (a, b) =>
+      a.ngay.localeCompare(b.ngay) || String(a.tabName).localeCompare(String(b.tabName), "vi"),
+  );
+  state.hhNgayOffDirty = true;
+  renderHhNgayOffTable();
+  resetHhNgayOffFormDefaults();
+  return true;
+}
+
+async function loadHhNgayOffFromApi() {
+  const res = await api("/api/hh-ngay-off");
+  state.hhNgayOff = res.offDays ?? [];
+  state.hhNgayOffDirty = false;
+  renderHhNgayOffTable();
+}
+
+function bindHhNgayOffForm() {
+  const form = $("#form-hh-ngay-off");
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    if (!tryAppendHhNgayOffFormRow()) {
+      setHhNgayOffStatus("Chọn nhân viên và ngày — không trùng dòng đã có.", "err");
+      return;
+    }
+    setHhNgayOffStatus("Đã thêm ngày — bấm «Lưu danh sách» để ghi Sheet.", "ok");
+  });
+
+  $("#btn-hh-ngay-off-reload")?.addEventListener("click", async () => {
+    setHhNgayOffStatus("Đang tải…");
+    try {
+      await loadHhNgayOffFromApi();
+      setHhNgayOffStatus(`Đã tải ${(state.hhNgayOff ?? []).length} ngày từ Sheet.`, "ok");
+    } catch (e) {
+      setHhNgayOffStatus(e.message || "Lỗi tải.", "err");
+    }
+  });
+
+  $("#btn-hh-ngay-off-save")?.addEventListener("click", async () => {
+    tryAppendHhNgayOffFormRow();
+    const list = state.hhNgayOff ?? [];
+    setHhNgayOffStatus("Đang lưu…");
+    try {
+      const res = await api("/api/hh-ngay-off", {
+        method: "PUT",
+        body: JSON.stringify({ offDays: list }),
+      });
+      state.hhNgayOff = res.offDays ?? list;
+      state.hhNgayOffDirty = false;
+      renderHhNgayOffTable();
+      setHhNgayOffStatus(res.message || "Đã lưu.", "ok");
+      await fetchSheetAndApply({ force: true, preserveHhLoaiTru: true, preserveHhNgayOff: true });
+      setHhNgayOffStatus("Đã lưu và cập nhật bảng lương.", "ok");
+    } catch (e) {
+      setHhNgayOffStatus(e.message || "Lỗi lưu.", "err");
+    }
+  });
+}
+
 function renderLuongNvTyGiaInfo() {
   const el = $("#luong-nv-ty-gia-info");
   if (!el) return;
@@ -1691,6 +1846,7 @@ async function loadChamCongNvTabs() {
     state.chamCongNvTemplate = res.templateTab ?? "SUBEO";
     state.chamCongNvCommissionStart = res.commissionStartByTab ?? {};
     renderChamCongNvTable();
+    renderHhNgayOffNvSelect();
   } catch (e) {
     setChamCongNvStatus(e.message || "Không tải được danh sách tab.", "err");
   }
@@ -1845,6 +2001,7 @@ function bindLuongNvToolbar() {
     btn.setAttribute("aria-expanded", open ? "true" : "false");
     btn.classList.toggle("active", open);
     if (open && !(state.chamCongNvTabs ?? []).length) void loadChamCongNvTabs();
+    if (open && !state.hhNgayOffDirty) void loadHhNgayOffFromApi().catch(() => {});
   });
 }
 
@@ -1882,6 +2039,7 @@ function renderLuongNv() {
   if (!wrap) return;
   renderHhLoaiTruTable();
   renderChamCongNvTable();
+  renderHhNgayOffTable();
   renderLuongNvTyGiaInfo();
   const report = state.reportLuongNv ?? { periods: [] };
   const periods = report.periods ?? [];
@@ -2094,7 +2252,7 @@ function displayLabel(s) {
 }
 
 function applyPayload(data, options = {}) {
-  const { preserveHhLoaiTru = false } = options;
+  const { preserveHhLoaiTru = false, preserveHhNgayOff = false } = options;
   syncSensitiveRevealClass();
   state.balance = data.balance ?? { value: 0, kvBound: false };
   state.thuChi = (data.thuChi ?? []).map(rowThuChi);
@@ -2128,6 +2286,9 @@ function applyPayload(data, options = {}) {
   };
   if (!preserveHhLoaiTru && !state.hhLoaiTruDirty) {
     state.hhLoaiTru = data.hhLoaiTru ?? [];
+  }
+  if (!preserveHhNgayOff && !state.hhNgayOffDirty) {
+    state.hhNgayOff = data.hhNgayOff ?? state.hhNgayOff ?? [];
   }
 
   const bal = state.balance?.value;
@@ -2262,7 +2423,7 @@ function showSheetDiagnostics(diag) {
 
 /** @returns {Promise<boolean>} true nếu dữ liệu đổi hoặc luôn khi force */
 async function fetchSheetAndApply(options = {}) {
-  const { force = false, silent = false, preserveHhLoaiTru = false } = options;
+  const { force = false, silent = false, preserveHhLoaiTru = false, preserveHhNgayOff = false } = options;
   const data = await api("/api/sheet", { method: "GET" });
   const sig = JSON.stringify(data);
   const prev = sessionStorage.getItem(LAST_SIG_KEY) || "";
@@ -2270,7 +2431,7 @@ async function fetchSheetAndApply(options = {}) {
     if (!silent) setSyncStatus("Đã là mới nhất (không đổi).", "ok");
     return false;
   }
-  applyPayload(data, { preserveHhLoaiTru });
+  applyPayload(data, { preserveHhLoaiTru, preserveHhNgayOff });
   const hasSheetErrors = (data.sheetDiagnostics?.errors ?? []).length > 0;
   const counts = data.sheetDiagnostics?.counts ?? {};
   const allEmpty =
@@ -2434,9 +2595,11 @@ async function main() {
   bindTabs();
   bindAppMenu();
   bindHhLoaiTruForm();
+  bindHhNgayOffForm();
   bindLuongNvToolbar();
   bindChamCongNvPanel();
   resetHhLoaiTruFormDefaults();
+  resetHhNgayOffFormDefaults();
   activateTab("coc");
   bindOverviewInput();
   setRevealed(isRevealed());

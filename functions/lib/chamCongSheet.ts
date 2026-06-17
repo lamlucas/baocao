@@ -64,6 +64,7 @@ export function isChamCongSystemTab(title: string): boolean {
   if (/^tổng hợp$|^tong hop$/i.test(low)) return true;
   if (low === "cau_hinh" || low === "cấu hình") return true;
   if (low === "hh_loai_tru") return true;
+  if (low === "hh_ngay_off") return true;
   return false;
 }
 

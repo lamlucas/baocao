@@ -5,6 +5,7 @@ import {
   commissionStartForTab,
   type CommissionStartByEmployee,
 } from "./luongNvEmployeeConfig";
+import { offDaysForTab, type HhNgayOffByEmployee } from "./hhNgayOff";
 import { flexibleDateToIso, num } from "./thuChiSheet";
 
 /** Hoa hồng = (thu − chi) × 1%. */
@@ -206,8 +207,16 @@ function commissionForMonth(
   cutoffDay: number | null,
   hhLoaiTruRules: HhLoaiTruRule[],
   commissionStartIso: string | null = null,
+  excludeDatesIso: string[] = [],
 ): number {
-  const agg = aggregateThuChiMonth(thuChi, monthIso, cutoffDay, hhLoaiTruRules, commissionStartIso);
+  const agg = aggregateThuChiMonth(
+    thuChi,
+    monthIso,
+    cutoffDay,
+    hhLoaiTruRules,
+    commissionStartIso,
+    excludeDatesIso,
+  );
   return Math.max(0, agg.netThu - agg.tongChi) * HOA_HONG_RATE;
 }
 
@@ -237,8 +246,16 @@ export function computeAdvanceCarryOutForMonth(
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
   commissionStartIso: string | null = null,
+  excludeDatesIso: string[] = [],
 ): number {
-  const commissionUsd = commissionForMonth(thuChi, monthIso, null, hhLoaiTruRules, commissionStartIso);
+  const commissionUsd = commissionForMonth(
+    thuChi,
+    monthIso,
+    null,
+    hhLoaiTruRules,
+    commissionStartIso,
+    excludeDatesIso,
+  );
   const gross = calcEmployeeGrossBeforeAdvance(rows, monthIso, null, commissionUsd, config);
   const pool = sumAdvanceInMonth(rows, monthIso, null);
   return Math.max(0, pool - gross);
@@ -252,6 +269,7 @@ function calcTienUngForPeriod(
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
   commissionStartIso: string | null = null,
+  excludeDatesIso: string[] = [],
 ): { tienUngUsd: number; carryOutUsd: number } {
   const commissionUsd = commissionForMonth(
     thuChi,
@@ -259,6 +277,7 @@ function calcTienUngForPeriod(
     cutoffDay,
     hhLoaiTruRules,
     commissionStartIso,
+    excludeDatesIso,
   );
   const gross = calcEmployeeGrossBeforeAdvance(rows, monthIso, cutoffDay, commissionUsd, config);
   const tienUngUsd = sumAdvanceInMonth(rows, monthIso, cutoffDay);
@@ -310,6 +329,7 @@ export function aggregateThuChiMonth(
   cutoffDay: number | null,
   hhLoaiTruRules: HhLoaiTruRule[] = [],
   minDateIso: string | null = null,
+  excludeDatesIso: string[] = [],
 ): {
   tongThu: number;
   tongChi: number;
@@ -318,6 +338,7 @@ export function aggregateThuChiMonth(
   thuExcluded: number;
   netThu: number;
 } {
+  const offDaySet = new Set(excludeDatesIso.filter(Boolean));
   let tongThu = 0;
   let tongChi = 0;
   let thuExcludedHhLoaiTru = 0;
@@ -326,6 +347,7 @@ export function aggregateThuChiMonth(
     const iso = flexibleDateToIso(r.ngay ?? "");
     if (!iso || monthFromIsoDate(iso) !== monthIso) continue;
     if (minDateIso && iso < minDateIso) continue;
+    if (offDaySet.has(iso)) continue;
     const day = dayOfMonthFromIso(iso);
     if (cutoffDay != null && day > cutoffDay) continue;
     const thu = num(r.thu);
@@ -372,6 +394,7 @@ function buildPeriod(
   hhLoaiTruRules: HhLoaiTruRule[],
   config: LuongNvConfig,
   commissionStartByEmployee: CommissionStartByEmployee = {},
+  hhNgayOffByEmployee: HhNgayOffByEmployee = {},
 ): LuongNvPeriod {
   const dim = daysInCalendarMonth(monthIso);
   const thuChiAgg = aggregateThuChiMonth(thuChi, monthIso, cutoffDay, hhLoaiTruRules);
@@ -380,12 +403,14 @@ function buildPeriod(
 
   const employees: LuongNvEmployeeRow[] = attendanceSheets.map((sheet) => {
     const commissionStartIso = commissionStartForTab(commissionStartByEmployee, sheet.sheetTitle);
+    const excludeDatesIso = offDaysForTab(hhNgayOffByEmployee, sheet.sheetTitle);
     const empCommissionUsd = commissionForMonth(
       thuChi,
       monthIso,
       cutoffDay,
       hhLoaiTruRules,
       commissionStartIso,
+      excludeDatesIso,
     );
     const workingDays = countWorkingDaysInMonth(sheet.rows, monthIso, cutoffDay);
     const tienPhatUsd = sumFinesInMonth(sheet.rows, monthIso, cutoffDay);
@@ -399,6 +424,7 @@ function buildPeriod(
       hhLoaiTruRules,
       config,
       commissionStartIso,
+      excludeDatesIso,
     );
     const tongLuongUsd = baseSalaryUsd + empCommissionUsd - tienPhatUsd + tienThuongUsd;
     const thucNhanUsd = tongLuongUsd - tienUngUsd;
@@ -462,6 +488,7 @@ export function buildLuongNvReport(
   hhLoaiTruRules: HhLoaiTruRule[] = [],
   config: LuongNvConfig,
   commissionStartByEmployee: CommissionStartByEmployee = {},
+  hhNgayOffByEmployee: HhNgayOffByEmployee = {},
 ): LuongNvReport {
   const currentMonth = todayIso.slice(0, 7);
   const previousMonth = previousMonthIso(currentMonth);
@@ -483,6 +510,7 @@ export function buildLuongNvReport(
         hhLoaiTruRules,
         config,
         commissionStartByEmployee,
+        hhNgayOffByEmployee,
       ),
       buildPeriod(
         "current",
@@ -494,6 +522,7 @@ export function buildLuongNvReport(
         hhLoaiTruRules,
         config,
         commissionStartByEmployee,
+        hhNgayOffByEmployee,
       ),
     ],
   };
