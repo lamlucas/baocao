@@ -1205,6 +1205,75 @@ body {
   margin: 0 0 0.75rem;
 }
 
+/** Bảng kiểm tra thu chi — gọn, không cuộn ngang, header thẳng cột số. */
+.table-wrap.table-wrap-fit {
+  overflow: visible;
+}
+
+.data-table-compare {
+  table-layout: fixed;
+  width: 100%;
+  font-size: 0.8125rem;
+}
+
+.data-table-compare th,
+.data-table-compare td {
+  padding: 0.35rem 0.45rem;
+  vertical-align: middle;
+}
+
+.data-table-compare th:nth-child(1),
+.data-table-compare td:nth-child(1) {
+  width: 16%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table-compare-detail th.th-num,
+.data-table-compare-detail td.cell-num {
+  width: 21%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.data-table-compare-detail th.th-status,
+.data-table-compare-detail td.td-status {
+  width: 10%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.data-table-compare-summary th:nth-child(2),
+.data-table-compare-summary th:nth-child(3),
+.data-table-compare-summary td:nth-child(2),
+.data-table-compare-summary td:nth-child(3) {
+  width: 9%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table-compare-summary th:nth-child(4),
+.data-table-compare-summary th:nth-child(5),
+.data-table-compare-summary td:nth-child(4),
+.data-table-compare-summary td:nth-child(5) {
+  width: 33%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.data-table-compare th {
+  text-transform: none;
+}
+
+.data-table-compare .th-sort-btn {
+  font-size: inherit;
+  padding: 0.05rem 0.2rem;
+}
+
 .compare-row-mismatch td {
   background: rgba(239, 68, 68, 0.1);
 }
@@ -1345,6 +1414,17 @@ body {
     margin-left: -0.15rem;
     margin-right: -0.15rem;
     border-radius: 10px;
+  }
+
+  .table-wrap.table-wrap-fit {
+    overflow-x: auto;
+  }
+
+  .data-table-compare-summary th:nth-child(4),
+  .data-table-compare-summary th:nth-child(5),
+  .data-table-compare-summary td:nth-child(4),
+  .data-table-compare-summary td:nth-child(5) {
+    width: 28%;
   }
 
   .data-table {

@@ -660,9 +660,9 @@ function renderCompareBcTcTenTable(tbodyEl, rows) {
     tr.innerHTML = `
       <td>${displayLabel(r.ten)}</td>
       <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.baoCaoThu))}</td>
-      <td class="cell-num">${fmtMoney(compareBcTcAmount(r.thuChiThu))}</td>
+      <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.thuChiThu))}</td>
       <td class="cell-num">${fmtChiTieuUsd(compareBcTcAmount(r.chenh))}</td>
-      <td>${status}</td>`;
+      <td class="td-status">${status}</td>`;
     tbodyEl.appendChild(tr);
   }
 }
@@ -715,7 +715,7 @@ function renderBaoCaoThuChiCompareDrill() {
           <td class="cell-num">${sum.khop}</td>
           <td class="cell-num">${sum.lech}</td>
           <td class="cell-num">${fmtChiTieuUsd(sum.tongBctk)}</td>
-          <td class="cell-num">${fmtMoney(sum.tongThuChi)}</td>`;
+          <td class="cell-num">${fmtChiTieuUsd(sum.tongThuChi)}</td>`;
         tbMonth.appendChild(tr);
       }
     }
@@ -752,7 +752,7 @@ function renderBaoCaoThuChiCompareDrill() {
             <td class="cell-num">${sum.khop}</td>
             <td class="cell-num">${sum.lech}</td>
             <td class="cell-num">${fmtChiTieuUsd(sum.tongBctk)}</td>
-            <td class="cell-num">${fmtMoney(sum.tongThuChi)}</td>`;
+            <td class="cell-num">${fmtChiTieuUsd(sum.tongThuChi)}</td>`;
           tbDays.appendChild(tr);
         }
       }
