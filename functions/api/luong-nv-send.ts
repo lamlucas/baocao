@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { runLuongNvMonthlyBot } from "../lib/luongNvMonthlyBot";
+import { resolveLuongNvBotToken } from "../lib/telegramSend";
 import { verifySession } from "../lib/session";
 
 async function requireUser(env: Env, request: Request): Promise<Response | null> {
@@ -13,7 +14,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const deny = await requireUser(context.env, context.request);
   if (deny) return deny;
 
-  if (!context.env.TELEGRAM_LUONG_NV_BOT_TOKEN?.trim()) {
+  if (!resolveLuongNvBotToken(context.env)) {
     return Response.json(
       { error: "Thiếu TELEGRAM_LUONG_NV_BOT_TOKEN (@Blackcorp7777_bot) trên Cloudflare." },
       { status: 503 },

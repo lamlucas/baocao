@@ -22,7 +22,7 @@ import {
   sheetsListTabTitles,
 } from "./google";
 import { flexibleDateToIso, normalizeThuChiDataRow, num } from "./thuChiSheet";
-import { telegramSendMessage } from "./telegramSend";
+import { telegramSendMessage, resolveLuongNvBotToken } from "./telegramSend";
 
 const CHAT_NOI_BO_DEFAULT = "-1003978420142";
 
@@ -111,7 +111,7 @@ export function buildLuongNvMonthlyTelegramText(period: LuongNvPeriod): string {
 
 /** Gửi bảng lương tháng trước + đồng bộ tiền ứng cột C ngày 1. */
 export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; month: string }> {
-  const botToken = env.TELEGRAM_LUONG_NV_BOT_TOKEN?.trim();
+  const botToken = resolveLuongNvBotToken(env);
   if (!botToken) {
     console.error("[luongNvMonthlyBot] Thiếu TELEGRAM_LUONG_NV_BOT_TOKEN (@Blackcorp7777_bot)");
     return { sent: false, month: "" };
