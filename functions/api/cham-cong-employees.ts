@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { ensureTodayDateRowsForTab } from "../lib/chamCongDateRoll";
 import {
   CHAM_CONG_TEMPLATE_TAB,
   createChamCongEmployeeTab,
@@ -69,10 +70,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const token = await getSheetsAccessToken(context.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const id = spreadsheetIdChamCong(context.env);
     await createChamCongEmployeeTab(token, id, tabName);
+    const rowsAdded = await ensureTodayDateRowsForTab(token, id, tabName);
     return Response.json({
       ok: true,
-      message: `Đã tạo tab « ${tabName} » (copy từ ${CHAM_CONG_TEMPLATE_TAB}, F2 = công thức SUBEO!F2).`,
+      message: `Đã tạo tab « ${tabName} » (copy từ ${CHAM_CONG_TEMPLATE_TAB}, F2 = công thức SUBEO!F2).${rowsAdded > 0 ? ` Đã thêm ${rowsAdded} dòng ngày.` : ""}`,
       tabName,
+      rowsAdded,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

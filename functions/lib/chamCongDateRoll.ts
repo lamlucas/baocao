@@ -9,6 +9,7 @@ import {
   sheetsListTabTitles,
   sheetsSpreadsheetBatchUpdate,
   sheetsSpreadsheetTables,
+  sheetsValuesAppend,
 } from "./google";
 
 const MAX_SCAN_ROW = 400;
@@ -133,24 +134,42 @@ async function insertDateRowsAt(
   dateLabels: string[],
 ): Promise<void> {
   if (!dateLabels.length) return;
+  const q = quoteSheet(tabName);
+
   const tables = await sheetsSpreadsheetTables(accessToken, spreadsheetId);
   const table = tables.find((t) => t.sheetTitle === tabName);
   if (table?.tableId) {
-    for (const ngay of dateLabels) {
-      await sheetsAppendTableRow(accessToken, spreadsheetId, table.tableId, [
-        ngay,
-        false,
-        "",
-        "",
-        "",
-        "",
-      ]);
+    try {
+      for (const ngay of dateLabels) {
+        await sheetsAppendTableRow(accessToken, spreadsheetId, table.tableId, [
+          ngay,
+          false,
+          "",
+          "",
+          "",
+          "",
+        ]);
+      }
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[ChamCong] table append ${tabName} failed, fallback insert: ${msg}`);
     }
-    return;
   }
 
   const sheetId = table?.sheetId ?? (await sheetIdForTitle(accessToken, spreadsheetId, tabName));
-  if (sheetId == null) return;
+  if (sheetId == null) {
+    for (const ngay of dateLabels) {
+      await sheetsValuesAppend(
+        accessToken,
+        spreadsheetId,
+        `${q}!A:F`,
+        [[ngay, false, "", "", "", ""]],
+        "USER_ENTERED",
+      );
+    }
+    return;
+  }
 
   const requests: unknown[] = [];
   for (let n = 0; n < dateLabels.length; n++) {
@@ -276,70 +295,20 @@ export async function ensureTodayDateRowsAllTabs(
   accessToken: string,
   spreadsheetId: string,
   unixSec?: number,
-  preloaded?: Map<string, unknown[][]>,
+  _preloaded?: Map<string, unknown[][]>,
 ): Promise<{ tabs: number; rowsAdded: number }> {
   const titles = listChamCongEmployeeTabs(
-    preloaded
-      ? [...preloaded.keys()]
-      : await sheetsListTabTitles(accessToken, spreadsheetId),
+    await sheetsListTabTitles(accessToken, spreadsheetId),
   );
   let rowsAdded = 0;
   for (const tab of titles) {
     if (isChamCongSystemTab(tab)) continue;
     try {
-      const rows = preloaded?.get(tab);
-      if (rows) {
-        rowsAdded += await ensureTodayDateRowsForTabWithRows(
-          accessToken,
-          spreadsheetId,
-          tab,
-          rows,
-          unixSec,
-        );
-      } else {
-        rowsAdded += await ensureTodayDateRowsForTab(accessToken, spreadsheetId, tab, unixSec);
-      }
+      rowsAdded += await ensureTodayDateRowsForTab(accessToken, spreadsheetId, tab, unixSec);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[ChamCong] roll dates ${tab}: ${msg}`);
     }
   }
   return { tabs: titles.length, rowsAdded };
-}
-
-async function ensureTodayDateRowsForTabWithRows(
-  accessToken: string,
-  spreadsheetId: string,
-  tabName: string,
-  rows: unknown[][],
-  unixSec?: number,
-): Promise<number> {
-  const today = todayParts(unixSec);
-  if (today.y <= 0) return 0;
-  if (dateExistsInRows(rows, today)) return 0;
-
-  const last = findLastDateInRows(rows);
-  const toAdd = datesToAddUntilToday(last, today);
-  if (!toAdd.length) return 0;
-
-  let insertAfter = 0;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const p = parseVietnamDateCell(rows[i]?.[0]);
-    if (p) {
-      insertAfter = i + 1;
-      break;
-    }
-  }
-  if (insertAfter <= 0) {
-    for (let i = 0; i < rows.length; i++) {
-      if (isChamCongHeaderRow(rows[i] ?? [])) {
-        insertAfter = i + 1;
-        break;
-      }
-    }
-  }
-  if (insertAfter <= 0) insertAfter = 1;
-
-  await insertDateRowsAt(accessToken, spreadsheetId, tabName, rows, insertAfter, toAdd);
-  return toAdd.length;
 }
