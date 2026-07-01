@@ -40,6 +40,7 @@ const state = {
   chamCongNvTabs: [],
   chamCongNvTemplate: "SUBEO",
   chamCongNvCommissionStart: {},
+  payrollStatus: [],
   selectedChamCongNvTab: "",
   reportThuChiNav: { month: "", day: "" },
   reportThuChiMode: "monthly",
@@ -1877,6 +1878,78 @@ function bindChamCongNvPanel() {
   });
 }
 
+function payrollStatusKey(month, tabName) {
+  return `${String(month ?? "").slice(0, 7)}|${String(tabName ?? "").trim().toLowerCase()}`;
+}
+
+function getPayrollStatus(month, tabName) {
+  const key = payrollStatusKey(month, tabName);
+  return (state.payrollStatus ?? []).find(
+    (r) => payrollStatusKey(r.month, r.tabName) === key,
+  );
+}
+
+function setLuongNvSendStatus(msg, kind) {
+  const el = $("#luong-nv-send-status");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.classList.remove("ok", "err");
+  if (kind) el.classList.add(kind);
+}
+
+async function luongNvPayrollAction(action, month, tabName) {
+  const res = await api("/api/luong-nv-pay", {
+    method: "POST",
+    body: JSON.stringify({ action, month, tabName }),
+  });
+  return res;
+}
+
+function bindLuongNvPayrollActions() {
+  const wrap = $("#wrap-luong-nv-periods");
+  if (!wrap || wrap.dataset.payBound === "1") return;
+  wrap.dataset.payBound = "1";
+  wrap.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("[data-luong-pay-action]");
+    if (!btn || btn.disabled) return;
+    const action = btn.getAttribute("data-luong-pay-action");
+    const month = btn.getAttribute("data-luong-month");
+    const tab = btn.getAttribute("data-luong-tab");
+    if (!action || !month || !tab) return;
+    const label =
+      action === "mark_paid" ? "đánh dấu đã thanh toán" : "khấu trừ tiền ứng";
+    if (!confirm(`${label} cho ${tab} — lương tháng ${month}?`)) return;
+    btn.disabled = true;
+    try {
+      const res = await luongNvPayrollAction(action, month, tab);
+      setLuongNvSendStatus(res.message || "Đã xử lý.", "ok");
+      await fetchSheetAndApply({ force: true, preserveHhLoaiTru: true });
+    } catch (e) {
+      setLuongNvSendStatus(e.message || "Lỗi.", "err");
+      btn.disabled = false;
+    }
+  });
+}
+
+function bindLuongNvSendTelegram() {
+  const btn = $("#btn-luong-nv-send-telegram");
+  if (!btn || btn.dataset.bound === "1") return;
+  btn.dataset.bound = "1";
+  btn.addEventListener("click", async () => {
+    if (!confirm("Gửi bảng lương tháng trước vào nhóm Nội Bộ qua Telegram?")) return;
+    setLuongNvSendStatus("Đang gửi…");
+    btn.disabled = true;
+    try {
+      const res = await api("/api/luong-nv-send", { method: "POST" });
+      setLuongNvSendStatus(res.message || "Đã gửi.", "ok");
+    } catch (e) {
+      setLuongNvSendStatus(e.message || "Lỗi gửi Telegram.", "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 function renderLuongNv() {
   const wrap = $("#wrap-luong-nv-periods");
   if (!wrap) return;
@@ -1904,6 +1977,8 @@ function renderLuongNv() {
       const employees = (period.employees ?? []).filter(
         (emp) => !filterTab || (emp.name ?? "") === filterTab,
       );
+      const isPayrollMonth = period.kind === "previous";
+      const showPayCol = isPayrollMonth;
       const rows = employees
         .map(
           (emp) => {
@@ -1931,6 +2006,16 @@ function renderLuongNv() {
             const hhTitle = hhStart
               ? ` title="HH tính từ ${formatDayForDisplay(hhStart)}"`
               : "";
+            const paySt = getPayrollStatus(period.month, emp.name);
+            const paid = paySt?.paid;
+            const deducted = paySt?.advanceDeducted;
+            const payCell = showPayCol
+              ? `<td class="luong-nv-pay-actions">
+                  ${paid ? `<span class="muted small">Đã TT</span>` : `<button type="button" class="btn ghost btn-sm" data-luong-pay-action="mark_paid" data-luong-month="${escapeAttr(period.month)}" data-luong-tab="${escapeAttr(emp.name)}">Đã thanh toán</button>`}
+                  ${deducted ? `<span class="muted small">Đã khấu trừ ứng</span>` : `<button type="button" class="btn ghost btn-sm" data-luong-pay-action="deduct_advance" data-luong-month="${escapeAttr(period.month)}" data-luong-tab="${escapeAttr(emp.name)}">Khấu trừ tiền ứng</button>`}
+                  ${paySt?.carryRemainingUsd > 0 ? `<div class="muted small">Ứng còn: ${fmtChiTieuUsd(paySt.carryRemainingUsd)}</div>` : ""}
+                </td>`
+              : "";
             return `
         <tr>
           <td class="cell-readonly">${escapeHtml(emp.name ?? "")}</td>
@@ -1942,14 +2027,16 @@ function renderLuongNv() {
           <td class="cell-readonly cell-num luong-nv-total"><strong>${fmtChiTieuUsd(tongLuong)}</strong></td>
           <td class="cell-readonly cell-num"${ungTitle}>${ung > 0 ? fmtChiTieuUsd(ung) : "—"}</td>
           <td class="cell-readonly cell-num luong-nv-total"><strong>${fmtChiTieuUsd(thucNhan)}</strong></td>
+          ${payCell}
         </tr>`;
           },
         )
         .join("");
 
+      const colSpan = showPayCol ? 10 : 9;
       const emptyRow =
         rows ||
-        `<tr><td colspan="9" class="muted">Chưa có tab nhân viên trong file chấm công.</td></tr>`;
+        `<tr><td colspan="${colSpan}" class="muted">Chưa có tab nhân viên trong file chấm công.</td></tr>`;
 
       return `
       <section class="luong-nv-period" data-period="${idx}">
@@ -1974,6 +2061,7 @@ function renderLuongNv() {
                 <th class="th-num">Tổng lương</th>
                 <th class="th-num">Tiền ứng</th>
                 <th class="th-num">Thực nhận</th>
+                ${showPayCol ? "<th>Thanh toán</th>" : ""}
               </tr>
             </thead>
             <tbody>${emptyRow}</tbody>
@@ -1982,6 +2070,7 @@ function renderLuongNv() {
       </section>`;
     })
     .join("");
+  bindLuongNvPayrollActions();
 }
 
 function escapeAttr(s) {
@@ -2126,6 +2215,7 @@ function applyPayload(data, options = {}) {
     previousMonth: "",
     periods: [],
   };
+  state.payrollStatus = data.payrollStatus ?? [];
   if (!preserveHhLoaiTru && !state.hhLoaiTruDirty) {
     state.hhLoaiTru = data.hhLoaiTru ?? [];
   }
@@ -2433,6 +2523,7 @@ function bindOverviewInput() {
 async function main() {
   bindTabs();
   bindAppMenu();
+  bindLuongNvSendTelegram();
   bindHhLoaiTruForm();
   bindLuongNvToolbar();
   bindChamCongNvPanel();

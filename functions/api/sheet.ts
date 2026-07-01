@@ -11,6 +11,7 @@ import {
   listChamCongEmployeeTabs,
 } from "../lib/chamCongSheet";
 import { ensureTodayDateRowsAllTabs } from "../lib/chamCongDateRoll";
+import { loadPayrollStatusMap } from "../lib/luongNvPayrollStatus";
 import { syncAdvanceCarryToFirstDayAllTabs } from "../lib/tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "../lib/luongNvConfig";
 import {
@@ -294,6 +295,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
     let luongNvConfig = buildLuongNvConfig(0, CHAM_CONG_TEMPLATE_TAB);
     let reportLuongNv = buildLuongNvReport([], thuChiModels, todayVn, hhLoaiTru, luongNvConfig);
+    let payrollStatus: import("../lib/luongNvPayrollStatus").LuongPayrollStatusRow[] = [];
     try {
       const idChamCong = spreadsheetIdChamCong(env);
       const chamBatch = await loadChamCongBatch(token, idChamCong);
@@ -334,6 +336,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         luongNvConfig,
         chamBatch.commissionStartByEmployee,
       );
+      const statusMap = await loadPayrollStatusMap(token, idChamCong);
+      payrollStatus = Object.values(statusMap);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[Sheets] cham cong: ${msg}`);
@@ -403,6 +407,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       reportChiTieu,
       reportBaoCaoThuChiCompare,
       reportLuongNv,
+      payrollStatus,
       hhLoaiTru,
       sheetDiagnostics: {
         spreadsheetIds: {

@@ -1106,6 +1106,23 @@ body {
   background: rgba(var(--accent-rgb), 0.14);
 }
 
+.luong-nv-toolbar-filters {
+  margin-top: 0.5rem;
+}
+
+.luong-nv-pay-actions {
+  min-width: 11rem;
+  vertical-align: top;
+}
+
+.luong-nv-pay-actions .btn-sm {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.35rem;
+  white-space: normal;
+  text-align: left;
+}
+
 .luong-nv-exclusions {
   margin-bottom: 2rem;
 }

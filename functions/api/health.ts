@@ -15,6 +15,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     ),
     TELEGRAM_BOT_TOKEN: Boolean(env.TELEGRAM_BOT_TOKEN?.trim()),
     TELEGRAM_LUONG_NV_BOT_TOKEN: Boolean(env.TELEGRAM_LUONG_NV_BOT_TOKEN?.trim()),
+    LUONG_NV_CRON_SECRET: Boolean(env.LUONG_NV_CRON_SECRET?.trim()),
   };
   const missing = Object.entries(checks)
     .filter(([, ok]) => !ok)

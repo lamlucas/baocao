@@ -397,12 +397,19 @@
                   <strong>Nội Bộ - Black Corp</strong> (<code>-1003978420142</code>). Token:
                   <code>TELEGRAM_LUONG_NV_BOT_TOKEN</code>. Cron gọi
                   <code>/api/luong-nv-cron?secret=…</code> (cần <code>LUONG_NV_CRON_SECRET</code>).
+                  Hoặc bấm <strong>Gửi bảng lương Telegram</strong> bên dưới (sau khi đăng nhập).
                 </li>
               </ul>
               <p class="muted small" id="luong-nv-ty-gia-info" aria-live="polite"></p>
             </div>
 
             <div class="luong-nv-toolbar">
+              <button type="button" class="btn primary" id="btn-luong-nv-send-telegram">
+                Gửi bảng lương Telegram
+              </button>
+              <p id="luong-nv-send-status" class="status small" aria-live="polite"></p>
+            </div>
+            <div class="luong-nv-toolbar luong-nv-toolbar-filters">
               <div class="luong-nv-picker-wrap" id="cham-cong-nv-picker-wrap">
                 <button
                   type="button"
