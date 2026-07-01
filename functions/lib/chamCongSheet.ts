@@ -3,7 +3,6 @@ import {
   sheetsListTabTitles,
   sheetsPutValues,
   sheetsSpreadsheetBatchUpdate,
-  sheetsValuesClear,
 } from "./google";
 import { num } from "./thuChiSheet";
 
