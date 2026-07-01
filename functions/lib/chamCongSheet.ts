@@ -28,25 +28,61 @@ export function formatNgayVietnam(unixSec?: number): string {
   }).format(d);
 }
 
-type SheetProps = { sheets?: { properties?: { title?: string; sheetId?: number } }[] };
+type SheetProps = {
+  sheets?: { properties?: { title?: string; sheetId?: number; gridProperties?: { rowCount?: number } } }[];
+};
 
-async function getSheetIdByTitle(
+async function getSheetMeta(
   accessToken: string,
   spreadsheetId: string,
   title: string,
-): Promise<number | null> {
+): Promise<{ sheetId: number; rowCount: number } | null> {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title))`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets(properties(sheetId,title,gridProperties(rowCount)))`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) throw new Error(`spreadsheets.get ${res.status}: ${await res.text()}`);
   const grid = (await res.json()) as SheetProps;
   for (const s of grid.sheets ?? []) {
     if (s.properties?.title === title && s.properties.sheetId != null) {
-      return s.properties.sheetId;
+      return {
+        sheetId: s.properties.sheetId,
+        rowCount: s.properties.gridProperties?.rowCount ?? 2,
+      };
     }
   }
   return null;
+}
+
+async function getSheetIdByTitle(
+  accessToken: string,
+  spreadsheetId: string,
+  title: string,
+): Promise<number | null> {
+  const meta = await getSheetMeta(accessToken, spreadsheetId, title);
+  return meta?.sheetId ?? null;
+}
+
+/** Giữ header (hàng 1) + 1 hàng dữ liệu — xóa phần thừa copy từ tab mẫu. */
+async function trimChamCongSheetToTwoRows(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<void> {
+  const meta = await getSheetMeta(accessToken, spreadsheetId, tabName);
+  if (!meta || meta.rowCount <= 2) return;
+  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+    {
+      deleteDimension: {
+        range: {
+          sheetId: meta.sheetId,
+          dimension: "ROWS",
+          startIndex: 2,
+          endIndex: meta.rowCount,
+        },
+      },
+    },
+  ]);
 }
 
 /** Tab mẫu copy khi tạo tab NV mới (SUBEO vẫn tính lương như NV). */
@@ -140,8 +176,9 @@ export async function createChamCongEmployeeTab(
     { duplicateSheet: { sourceSheetId: sourceId, newSheetName: name } },
   ]);
 
+  await trimChamCongSheetToTwoRows(accessToken, spreadsheetId, name);
+
   const q = quoteSheet(name);
-  await sheetsValuesClear(accessToken, spreadsheetId, `${q}!A3:F${MAX_ROW}`);
   const today = formatNgayVietnam();
   await sheetsPutValues(accessToken, spreadsheetId, `${q}!A2:B2`, [[today, "FALSE"]], "USER_ENTERED");
   await copyTemplateF2ToTab(accessToken, spreadsheetId, name, templateTab);

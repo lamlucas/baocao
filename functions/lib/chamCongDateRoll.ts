@@ -4,12 +4,11 @@ import {
   formatNgayVietnam,
 } from "./chamCongSheet";
 import {
-  sheetsAppendTableRow,
   sheetsBatchGet,
   sheetsListTabTitles,
+  sheetsPutValues,
   sheetsSpreadsheetBatchUpdate,
-  sheetsSpreadsheetTables,
-  sheetsValuesAppend,
+  sheetsValuesClear,
 } from "./google";
 
 const MAX_SCAN_ROW = 400;
@@ -64,6 +63,18 @@ function isChamCongHeaderRow(row: unknown[]): boolean {
   return /ngày|ngay|date/.test(a) && /chấm công|cham cong|đi làm|di lam/.test(b);
 }
 
+function headerRowIndex(rows: unknown[][]): number {
+  for (let i = 0; i < rows.length; i++) {
+    if (isChamCongHeaderRow(rows[i] ?? [])) return i;
+  }
+  return 0;
+}
+
+/** Dòng dữ liệu đầu tiên (0-based) — ngay sau header, thường là hàng 2 sheet. */
+function firstDataRowIndex(rows: unknown[][]): number {
+  return headerRowIndex(rows) + 1;
+}
+
 function datesToAddUntilToday(last: DateParts | null, today: DateParts): string[] {
   const todayK = dateKey(today);
   const out: string[] = [];
@@ -108,67 +119,109 @@ function dateExistsInRows(rows: unknown[][], target: DateParts): boolean {
   return false;
 }
 
-function findInsertIndexForDate(rows: unknown[][], target: DateParts): number {
-  const targetKey = dateKey(target);
-  let insertAfter = 0;
-  for (let i = 0; i < rows.length; i++) {
+function collectDateDataRows(rows: unknown[][]): {
+  dataStart: number;
+  firstDateIdx: number;
+  dateRows: unknown[][];
+} {
+  const dataStart = firstDataRowIndex(rows);
+  const dateRows: unknown[][] = [];
+  let firstDateIdx = -1;
+  for (let i = dataStart; i < rows.length; i++) {
     const row = rows[i] ?? [];
-    if (isChamCongHeaderRow(row)) {
-      insertAfter = i + 1;
-      continue;
-    }
     const p = parseVietnamDateCell(row[0]);
     if (!p) continue;
-    if (dateKey(p) >= targetKey) return i;
-    insertAfter = i + 1;
+    if (firstDateIdx < 0) firstDateIdx = i;
+    dateRows.push([
+      formatParts(p),
+      row[1] ?? false,
+      row[2] ?? "",
+      row[3] ?? "",
+      row[4] ?? "",
+      row[5] ?? "",
+    ]);
   }
-  return insertAfter;
+  return { dataStart, firstDateIdx, dateRows };
+}
+
+function findLastNonemptyRowIndex(rows: unknown[][]): number {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i] ?? [];
+    if (row.some((c) => c !== "" && c != null && c !== false)) return i;
+  }
+  return 0;
+}
+
+/**
+ * Gom các dòng ngày lên sát header (bắt đầu hàng 2) — sửa tab bị trống phía trên.
+ */
+export async function compactChamCongDateRowsToTop(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<boolean> {
+  const q = quoteSheet(tabName);
+  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+  const rows = batch[tabName] ?? [];
+  const { dataStart, firstDateIdx, dateRows } = collectDateDataRows(rows);
+  if (firstDateIdx < 0) return false;
+  if (firstDateIdx === dataStart) return false;
+
+  const sheetId = await sheetIdForTitle(accessToken, spreadsheetId, tabName);
+  if (sheetId == null) return false;
+
+  await sheetsValuesClear(accessToken, spreadsheetId, `${q}!A${dataStart + 1}:F${MAX_SCAN_ROW}`);
+  if (dateRows.length > 0) {
+    await sheetsPutValues(
+      accessToken,
+      spreadsheetId,
+      `${q}!A${dataStart + 1}`,
+      dateRows,
+      "USER_ENTERED",
+    );
+  }
+
+  const oldLast = findLastNonemptyRowIndex(rows);
+  const newLast = dataStart + dateRows.length - 1;
+  if (oldLast > newLast) {
+    await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+      {
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: newLast + 1,
+            endIndex: oldLast + 1,
+          },
+        },
+      },
+    ]);
+  }
+  return true;
+}
+
+function findInsertIndexForNewDates(rows: unknown[][]): number {
+  const dataStart = firstDataRowIndex(rows);
+  let lastDateIdx = -1;
+  for (let i = dataStart; i < rows.length; i++) {
+    const p = parseVietnamDateCell(rows[i]?.[0]);
+    if (p) lastDateIdx = i;
+  }
+  if (lastDateIdx >= dataStart) return lastDateIdx + 1;
+  return dataStart;
 }
 
 async function insertDateRowsAt(
   accessToken: string,
   spreadsheetId: string,
   tabName: string,
-  rows: unknown[][],
   insertAt: number,
   dateLabels: string[],
 ): Promise<void> {
   if (!dateLabels.length) return;
-  const q = quoteSheet(tabName);
-
-  const tables = await sheetsSpreadsheetTables(accessToken, spreadsheetId);
-  const table = tables.find((t) => t.sheetTitle === tabName);
-  if (table?.tableId) {
-    try {
-      for (const ngay of dateLabels) {
-        await sheetsAppendTableRow(accessToken, spreadsheetId, table.tableId, [
-          ngay,
-          false,
-          "",
-          "",
-          "",
-          "",
-        ]);
-      }
-      return;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[ChamCong] table append ${tabName} failed, fallback insert: ${msg}`);
-    }
-  }
-
-  const sheetId = table?.sheetId ?? (await sheetIdForTitle(accessToken, spreadsheetId, tabName));
+  const sheetId = await sheetIdForTitle(accessToken, spreadsheetId, tabName);
   if (sheetId == null) {
-    for (const ngay of dateLabels) {
-      await sheetsValuesAppend(
-        accessToken,
-        spreadsheetId,
-        `${q}!A:F`,
-        [[ngay, false, "", "", "", ""]],
-        "USER_ENTERED",
-      );
-    }
-    return;
+    throw new Error(`Không tìm thấy sheetId tab «${tabName}».`);
   }
 
   const requests: unknown[] = [];
@@ -218,24 +271,27 @@ export async function ensureDateRowForTab(
   tabName: string,
   target: DateParts,
 ): Promise<boolean> {
+  await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
   const q = quoteSheet(tabName);
   const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
   const rows = batch[tabName] ?? [];
   if (dateExistsInRows(rows, target)) return false;
 
   const ngay = formatParts(target);
-  const insertAt = findInsertIndexForDate(rows, target);
-  await insertDateRowsAt(accessToken, spreadsheetId, tabName, rows, insertAt, [ngay]);
+  const insertAt = findInsertIndexForNewDates(rows);
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, [ngay]);
   return true;
 }
 
-/** Thêm dòng ngày vào Bảng chấm công (appendCells) hoặc chèn hàng + copy định dạng. */
+/** Thêm dòng ngày — luôn chèn sát header (hàng 2), không append cuối Table. */
 export async function ensureTodayDateRowsForTab(
   accessToken: string,
   spreadsheetId: string,
   tabName: string,
   unixSec?: number,
 ): Promise<number> {
+  await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
+
   const q = quoteSheet(tabName);
   const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
   const rows = batch[tabName] ?? [];
@@ -247,25 +303,8 @@ export async function ensureTodayDateRowsForTab(
   const toAdd = datesToAddUntilToday(last, today);
   if (!toAdd.length) return 0;
 
-  let insertAfter = 0;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const p = parseVietnamDateCell(rows[i]?.[0]);
-    if (p) {
-      insertAfter = i + 1;
-      break;
-    }
-  }
-  if (insertAfter <= 0) {
-    for (let i = 0; i < rows.length; i++) {
-      if (isChamCongHeaderRow(rows[i] ?? [])) {
-        insertAfter = i + 1;
-        break;
-      }
-    }
-  }
-  if (insertAfter <= 0) insertAfter = 1;
-
-  await insertDateRowsAt(accessToken, spreadsheetId, tabName, rows, insertAfter, toAdd);
+  const insertAt = findInsertIndexForNewDates(rows);
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, toAdd);
   return toAdd.length;
 }
 
