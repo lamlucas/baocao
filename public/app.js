@@ -1990,16 +1990,13 @@ function renderLuongNv() {
             const phat = emp.tienPhatUsd ?? 0;
             const thuong = emp.tienThuongUsd ?? 0;
             const ung = emp.tienUngUsd ?? 0;
-            const carryOut = emp.tienUngCarryOutUsd ?? 0;
             const paySt = getPayrollStatus(period.month, emp.name);
             const paid = paySt?.paid;
             const deducted = paySt?.advanceDeducted;
             const ungTitle =
               paid && ung > 0
                 ? ` title="Giữ nguyên tổng ứng ${fmtChiTieuUsd(ung)} — đã TT"`
-                : carryOut > 0 && !paid
-                  ? ` title="Còn ${fmtChiTieuUsd(carryOut)} — chỉ khấu trừ khi bấm «Khấu trừ tiền ứng»"`
-                  : "";
+                : "";
             const tongLuong =
               emp.tongLuongUsd ??
               base + (emp.commissionUsd ?? 0) - phat + thuong;

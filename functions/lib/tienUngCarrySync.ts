@@ -2,10 +2,8 @@ import type { HhLoaiTruRule } from "./hhLoaiTru";
 import { payrollStatusFor, type LuongPayrollStatusRow } from "./luongNvPayrollStatus";
 import { sheetsPutValues } from "./google";
 import type { LuongNvConfig } from "./luongNvConfig";
-import { commissionStartForTab, type CommissionStartByEmployee } from "./luongNvEmployeeConfig";
+import type { CommissionStartByEmployee } from "./luongNvEmployeeConfig";
 import {
-  computeAdvanceCarryOutForMonth,
-  datesWithoutAttendanceInMonth,
   sumAdvanceInMonth,
   type AttendanceSheetRows,
   type ThuChiRow,
@@ -49,8 +47,8 @@ function findRowIndexForMonthDay(
 }
 
 /**
- * Ghi phần ứng còn lại tháng trước vào cột C ngày 1 tháng hiện tại (SUBEO + tab NV).
- * Chỉ ghi khi đã có dòng ngày 01 — không tự tạo dòng mới.
+ * Ghi tổng tiền ứng tháng trước vào cột C ngày 1 tháng hiện tại.
+ * Không tự trừ lương — chỉ «Khấu trừ tiền ứng» mới trừ (ghi tay, bỏ qua sync).
  */
 export async function syncAdvanceCarryToFirstDayAllTabs(
   accessToken: string,
@@ -72,25 +70,8 @@ export async function syncAdvanceCarryToFirstDayAllTabs(
     const status = payrollStatusFor(payrollStatusMap, previousMonth, sheet.sheetTitle);
     if (status?.advanceDeducted) continue;
 
-    const commissionStart = commissionStartForTab(commissionStartByEmployee, sheet.sheetTitle);
-    const excludeThuDates = datesWithoutAttendanceInMonth(sheet.rows, previousMonth, null);
     const pool = sumAdvanceInMonth(sheet.rows, previousMonth, null);
-
-    let targetC: number;
-    if (status?.paid) {
-      // Đã thanh toán: giữ nguyên tiền ứng, không trừ lương.
-      targetC = pool;
-    } else {
-      targetC = computeAdvanceCarryOutForMonth(
-        sheet.rows,
-        previousMonth,
-        thuChi,
-        hhLoaiTruRules,
-        config,
-        commissionStart,
-        excludeThuDates,
-      );
-    }
+    const targetC = pool;
 
     const rowIdx = findRowIndexForMonthDay(sheet.rows, currentMonth, 1);
     if (rowIdx == null) continue;
