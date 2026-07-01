@@ -8,6 +8,7 @@ import { ensureTodayDateRowsAllTabs } from "./chamCongDateRoll";
 import { syncAdvanceCarryToFirstDayAllTabs } from "./tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "./luongNvConfig";
 import { loadCommissionStartByEmployee } from "./luongNvEmployeeConfig";
+import { loadPayrollStatusMap } from "./luongNvPayrollStatus";
 import {
   buildLuongNvReport,
   filterAttendanceSheetTitles,
@@ -177,6 +178,7 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
 
   await ensureTodayDateRowsAllTabs(token, idChamCong);
   let attendanceSheets = await loadAttendanceSheets(token, idChamCong);
+  const payrollStatusMap = await loadPayrollStatusMap(token, idChamCong);
   attendanceSheets = await syncAdvanceCarryToFirstDayAllTabs(
     token,
     idChamCong,
@@ -187,6 +189,7 @@ export async function runLuongNvMonthlyBot(env: Env): Promise<{ sent: boolean; m
     luongNvConfig,
     () => loadAttendanceSheets(token, idChamCong),
     commissionStartByEmployee,
+    payrollStatusMap,
   );
 
   const report = buildLuongNvReport(

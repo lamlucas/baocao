@@ -1992,9 +1992,11 @@ function renderLuongNv() {
             const ung = emp.tienUngUsd ?? 0;
             const carryOut = emp.tienUngCarryOutUsd ?? 0;
             const ungTitle =
-              carryOut > 0
-                ? ` title="Còn ${fmtChiTieuUsd(carryOut)} — bot tự ghi cột C ngày 1 tháng sau"`
-                : "";
+              carryOut > 0 && !paid
+                ? ` title="Còn ${fmtChiTieuUsd(carryOut)} — chỉ khấu trừ khi bấm «Khấu trừ tiền ứng»"`
+                : paid && paySt?.carryRemainingUsd > 0
+                  ? ` title="Giữ nguyên ứng ${fmtChiTieuUsd(paySt.carryRemainingUsd)} — đã TT"`
+                  : "";
             const tongLuong =
               emp.tongLuongUsd ??
               base + (emp.commissionUsd ?? 0) - phat + thuong;
@@ -2011,9 +2013,8 @@ function renderLuongNv() {
             const deducted = paySt?.advanceDeducted;
             const payCell = showPayCol
               ? `<td class="luong-nv-pay-actions">
-                  ${paid ? `<span class="muted small">Đã TT</span>` : `<button type="button" class="btn ghost btn-sm" data-luong-pay-action="mark_paid" data-luong-month="${escapeAttr(period.month)}" data-luong-tab="${escapeAttr(emp.name)}">Đã thanh toán</button>`}
-                  ${deducted ? `<span class="muted small">Đã khấu trừ ứng</span>` : `<button type="button" class="btn ghost btn-sm" data-luong-pay-action="deduct_advance" data-luong-month="${escapeAttr(period.month)}" data-luong-tab="${escapeAttr(emp.name)}">Khấu trừ tiền ứng</button>`}
-                  ${paySt?.carryRemainingUsd > 0 ? `<div class="muted small">Ứng còn: ${fmtChiTieuUsd(paySt.carryRemainingUsd)}</div>` : ""}
+                  ${paid ? `<span class="muted small">Đã TT${paySt?.carryRemainingUsd > 0 ? ` — ứng giữ ${fmtChiTieuUsd(paySt.carryRemainingUsd)}` : ""}</span>` : `<button type="button" class="btn ghost btn-sm" data-luong-pay-action="mark_paid" data-luong-month="${escapeAttr(period.month)}" data-luong-tab="${escapeAttr(emp.name)}"${deducted ? " disabled" : ""}>Đã thanh toán</button>`}
+                  ${deducted ? `<span class="muted small">Đã khấu trừ ứng${paySt?.carryRemainingUsd > 0 ? ` — còn ${fmtChiTieuUsd(paySt.carryRemainingUsd)}` : ""}</span>` : paid ? "" : `<button type="button" class="btn ghost btn-sm" data-luong-pay-action="deduct_advance" data-luong-month="${escapeAttr(period.month)}" data-luong-tab="${escapeAttr(emp.name)}">Khấu trừ tiền ứng</button>`}
                 </td>`
               : "";
             return `

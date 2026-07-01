@@ -1,10 +1,12 @@
 import type { HhLoaiTruRule } from "./hhLoaiTru";
+import { payrollStatusFor, type LuongPayrollStatusRow } from "./luongNvPayrollStatus";
 import { sheetsPutValues } from "./google";
 import type { LuongNvConfig } from "./luongNvConfig";
 import { commissionStartForTab, type CommissionStartByEmployee } from "./luongNvEmployeeConfig";
 import {
   computeAdvanceCarryOutForMonth,
   datesWithoutAttendanceInMonth,
+  sumAdvanceInMonth,
   type AttendanceSheetRows,
   type ThuChiRow,
 } from "./luongNvReport";
@@ -60,34 +62,48 @@ export async function syncAdvanceCarryToFirstDayAllTabs(
   config: LuongNvConfig,
   reloadSheets: () => Promise<AttendanceSheetRows[]>,
   commissionStartByEmployee: CommissionStartByEmployee = {},
+  payrollStatusMap: Record<string, LuongPayrollStatusRow> = {},
 ): Promise<AttendanceSheetRows[]> {
   const currentMonth = todayIso.slice(0, 7);
   const previousMonth = previousMonthIso(currentMonth);
   let updated = 0;
 
   for (const sheet of attendanceSheets) {
-    const carryOut = computeAdvanceCarryOutForMonth(
-      sheet.rows,
-      previousMonth,
-      thuChi,
-      hhLoaiTruRules,
-      config,
-      commissionStartForTab(commissionStartByEmployee, sheet.sheetTitle),
-      datesWithoutAttendanceInMonth(sheet.rows, previousMonth, null),
-    );
+    const status = payrollStatusFor(payrollStatusMap, previousMonth, sheet.sheetTitle);
+    if (status?.advanceDeducted) continue;
+
+    const commissionStart = commissionStartForTab(commissionStartByEmployee, sheet.sheetTitle);
+    const excludeThuDates = datesWithoutAttendanceInMonth(sheet.rows, previousMonth, null);
+    const pool = sumAdvanceInMonth(sheet.rows, previousMonth, null);
+
+    let targetC: number;
+    if (status?.paid) {
+      // Đã thanh toán: giữ nguyên tiền ứng, không trừ lương.
+      targetC = pool;
+    } else {
+      targetC = computeAdvanceCarryOutForMonth(
+        sheet.rows,
+        previousMonth,
+        thuChi,
+        hhLoaiTruRules,
+        config,
+        commissionStart,
+        excludeThuDates,
+      );
+    }
+
     const rowIdx = findRowIndexForMonthDay(sheet.rows, currentMonth, 1);
     if (rowIdx == null) continue;
 
+    if (targetC <= 0.009) continue;
     const currentC = num(sheet.rows[rowIdx]?.[2]);
-    // Chỉ ghi cột C ngày 1 khi Thực nhận (Tổng lương − Tiền ứng) ≤ 0 — phần ứng còn lại.
-    if (carryOut <= 0.009) continue;
-    if (Math.abs(currentC - carryOut) < 0.009) continue;
+    if (Math.abs(currentC - targetC) < 0.009) continue;
 
     await sheetsPutValues(
       accessToken,
       spreadsheetId,
       `${quoteSheet(sheet.sheetTitle)}!C${rowIdx + 1}`,
-      [[carryOut]],
+      [[targetC]],
       "RAW",
     );
     updated++;

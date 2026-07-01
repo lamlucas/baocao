@@ -153,22 +153,79 @@ export async function loadPayrollStatusMap(
   return payrollStatusMapFromRows(rows);
 }
 
-/** Đánh dấu đã thanh toán lương tháng (thường là tháng trước). */
+async function writeAdvanceToFirstDay(
+  accessToken: string,
+  spreadsheetIdChamCong: string,
+  tabName: string,
+  attendanceRows: unknown[][],
+  todayIso: string,
+  amountUsd: number,
+  note: string,
+): Promise<void> {
+  const currentMonth = todayIso.slice(0, 7);
+  const rowIdx = findRowIndexForMonthDay(attendanceRows, currentMonth, 1);
+  if (rowIdx == null) {
+    throw new Error(
+      `Chưa có dòng ngày 01/${currentMonth.slice(5, 7)}/${currentMonth.slice(0, 4)} trên tab «${tabName}».`,
+    );
+  }
+  const sheetRow = rowIdx + 1;
+  const newCUsd = amountUsd > 0.009 ? amountUsd : 0;
+  await sheetsPutValues(
+    accessToken,
+    spreadsheetIdChamCong,
+    `${quoteSheet(tabName)}!C${sheetRow}`,
+    [[newCUsd]],
+    "RAW",
+  );
+  await sheetsPutValues(
+    accessToken,
+    spreadsheetIdChamCong,
+    `${quoteSheet(tabName)}!F${sheetRow}`,
+    [[note]],
+    "USER_ENTERED",
+  );
+}
+
+/**
+ * Đánh dấu đã thanh toán — không khấu trừ ứng; ghi nguyên tiền ứng sang cột C ngày 01 tháng mới.
+ */
 export async function markSalaryPaid(
   accessToken: string,
   spreadsheetIdChamCong: string,
   monthIso: string,
   tabName: string,
+  tienUngCu: number,
+  attendanceRows: unknown[][],
+  todayIso: string,
   existingMap: Record<string, LuongPayrollStatusRow>,
 ): Promise<LuongPayrollStatusRow> {
   const prev = payrollStatusFor(existingMap, monthIso, tabName);
+  const carryUsd = Math.max(0, tienUngCu);
+  const note =
+    carryUsd > 0.009
+      ? `Giữ nguyên ứng ${carryUsd.toFixed(2)} USD — đã TT lương ${monthIso}`
+      : `Đã TT lương ${monthIso} — không có tiền ứng`;
+
+  if (carryUsd > 0.009) {
+    await writeAdvanceToFirstDay(
+      accessToken,
+      spreadsheetIdChamCong,
+      tabName,
+      attendanceRows,
+      todayIso,
+      carryUsd,
+      note,
+    );
+  }
+
   const row: LuongPayrollStatusRow = {
     month: monthIso,
     tabName,
     paid: true,
-    advanceDeducted: prev?.advanceDeducted ?? false,
-    carryRemainingUsd: prev?.carryRemainingUsd ?? 0,
-    note: prev?.note ?? "",
+    advanceDeducted: false,
+    carryRemainingUsd: carryUsd,
+    note,
   };
   await upsertLuongTtRow(accessToken, spreadsheetIdChamCong, row);
   return row;
@@ -189,34 +246,20 @@ export async function deductAdvanceForEmployee(
   todayIso: string,
   existingMap: Record<string, LuongPayrollStatusRow>,
 ): Promise<{ carryRemainingUsd: number; row: LuongPayrollStatusRow }> {
-  const currentMonth = todayIso.slice(0, 7);
   const carryRemainingUsd = Math.max(0, tienUngCu - tongLuongUsd);
-  const rowIdx = findRowIndexForMonthDay(attendanceRows, currentMonth, 1);
-  if (rowIdx == null) {
-    throw new Error(
-      `Chưa có dòng ngày 01/${currentMonth.slice(5, 7)}/${currentMonth.slice(0, 4)} trên tab «${tabName}».`,
-    );
-  }
-  const sheetRow = rowIdx + 1;
-  const newCUsd = carryRemainingUsd > 0.009 ? carryRemainingUsd : 0;
   const note =
     carryRemainingUsd > 0.009
       ? `Ứng còn ${carryRemainingUsd.toFixed(2)} USD (sau khấu trừ lương ${payrollMonthIso})`
       : `Đã khấu trừ hết ứng — lương ${payrollMonthIso}`;
 
-  await sheetsPutValues(
+  await writeAdvanceToFirstDay(
     accessToken,
     spreadsheetIdChamCong,
-    `${quoteSheet(tabName)}!C${sheetRow}`,
-    [[newCUsd]],
-    "RAW",
-  );
-  await sheetsPutValues(
-    accessToken,
-    spreadsheetIdChamCong,
-    `${quoteSheet(tabName)}!F${sheetRow}`,
-    [[note]],
-    "USER_ENTERED",
+    tabName,
+    attendanceRows,
+    todayIso,
+    carryRemainingUsd > 0.009 ? carryRemainingUsd : 0,
+    note,
   );
 
   const prev = payrollStatusFor(existingMap, payrollMonthIso, tabName);

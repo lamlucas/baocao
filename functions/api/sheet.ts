@@ -317,6 +317,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         sheetErrors.push(...reloaded.errors);
       }
 
+      const statusMap = await loadPayrollStatusMap(token, idChamCong);
       attendanceSheets = await syncAdvanceCarryToFirstDayAllTabs(
         token,
         idChamCong,
@@ -327,6 +328,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         luongNvConfig,
         async () => (await loadChamCongBatch(token, idChamCong)).attendanceSheets,
         chamBatch.commissionStartByEmployee,
+        statusMap,
       );
       reportLuongNv = buildLuongNvReport(
         attendanceSheets,
@@ -336,7 +338,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         luongNvConfig,
         chamBatch.commissionStartByEmployee,
       );
-      const statusMap = await loadPayrollStatusMap(token, idChamCong);
       payrollStatus = Object.values(statusMap);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
