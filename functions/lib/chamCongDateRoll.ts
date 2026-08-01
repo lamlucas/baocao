@@ -4,14 +4,17 @@ import {
   formatNgayVietnam,
 } from "./chamCongSheet";
 import {
+  sheetsAppendTableRow,
   sheetsBatchGet,
   sheetsListTabTitles,
   sheetsPutValues,
   sheetsSpreadsheetBatchUpdate,
+  sheetsSpreadsheetTables,
+  sheetsValuesAppend,
   sheetsValuesClear,
 } from "./google";
 
-const MAX_SCAN_ROW = 400;
+const MAX_SCAN_ROW = 500;
 const DATA_COLS = 6;
 
 type DateParts = { y: number; m: number; d: number };
@@ -70,7 +73,6 @@ function headerRowIndex(rows: unknown[][]): number {
   return 0;
 }
 
-/** Dòng dữ liệu đầu tiên (0-based) — ngay sau header, thường là hàng 2 sheet. */
 function firstDataRowIndex(rows: unknown[][]): number {
   return headerRowIndex(rows) + 1;
 }
@@ -84,10 +86,13 @@ function datesToAddUntilToday(last: DateParts | null, today: DateParts): string[
   }
   let cursor = last;
   let cursorK = dateKey(cursor);
-  while (cursorK < todayK) {
+  // Giới hạn 62 ngày — tránh vòng lặp nếu parse ngày lỗi
+  let guard = 0;
+  while (cursorK < todayK && guard < 62) {
     cursor = addCalendarDay(cursor);
     cursorK = dateKey(cursor);
     out.push(formatParts(cursor));
+    guard++;
   }
   return out;
 }
@@ -132,13 +137,14 @@ function collectDateDataRows(rows: unknown[][]): {
     const p = parseVietnamDateCell(row[0]);
     if (!p) continue;
     if (firstDateIdx < 0) firstDateIdx = i;
+    // Không copy cột F (tỉ giá) — F2 giữ công thức; các dòng khác F trống
     dateRows.push([
       formatParts(p),
       row[1] ?? false,
       row[2] ?? "",
       row[3] ?? "",
       row[4] ?? "",
-      row[5] ?? "",
+      "",
     ]);
   }
   return { dataStart, firstDateIdx, dateRows };
@@ -150,162 +156,6 @@ function findLastNonemptyRowIndex(rows: unknown[][]): number {
     if (row.some((c) => c !== "" && c != null && c !== false)) return i;
   }
   return 0;
-}
-
-/**
- * Gom các dòng ngày lên sát header (bắt đầu hàng 2) — sửa tab bị trống phía trên.
- */
-export async function compactChamCongDateRowsToTop(
-  accessToken: string,
-  spreadsheetId: string,
-  tabName: string,
-): Promise<boolean> {
-  const q = quoteSheet(tabName);
-  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-  const rows = batch[tabName] ?? [];
-  const { dataStart, firstDateIdx, dateRows } = collectDateDataRows(rows);
-  if (firstDateIdx < 0) return false;
-  if (firstDateIdx === dataStart) return false;
-
-  const sheetId = await sheetIdForTitle(accessToken, spreadsheetId, tabName);
-  if (sheetId == null) return false;
-
-  await sheetsValuesClear(accessToken, spreadsheetId, `${q}!A${dataStart + 1}:F${MAX_SCAN_ROW}`);
-  if (dateRows.length > 0) {
-    await sheetsPutValues(
-      accessToken,
-      spreadsheetId,
-      `${q}!A${dataStart + 1}`,
-      dateRows,
-      "USER_ENTERED",
-    );
-  }
-
-  const oldLast = findLastNonemptyRowIndex(rows);
-  const newLast = dataStart + dateRows.length - 1;
-  if (oldLast > newLast) {
-    await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
-      {
-        deleteDimension: {
-          range: {
-            sheetId,
-            dimension: "ROWS",
-            startIndex: newLast + 1,
-            endIndex: oldLast + 1,
-          },
-        },
-      },
-    ]);
-  }
-  return true;
-}
-
-function findInsertIndexForNewDates(rows: unknown[][]): number {
-  const dataStart = firstDataRowIndex(rows);
-  let lastDateIdx = -1;
-  for (let i = dataStart; i < rows.length; i++) {
-    const p = parseVietnamDateCell(rows[i]?.[0]);
-    if (p) lastDateIdx = i;
-  }
-  if (lastDateIdx >= dataStart) return lastDateIdx + 1;
-  return dataStart;
-}
-
-async function insertDateRowsAt(
-  accessToken: string,
-  spreadsheetId: string,
-  tabName: string,
-  insertAt: number,
-  dateLabels: string[],
-): Promise<void> {
-  if (!dateLabels.length) return;
-  const sheetId = await sheetIdForTitle(accessToken, spreadsheetId, tabName);
-  if (sheetId == null) {
-    throw new Error(`Không tìm thấy sheetId tab «${tabName}».`);
-  }
-
-  const requests: unknown[] = [];
-  for (let n = 0; n < dateLabels.length; n++) {
-    const at = insertAt + n;
-    requests.push({
-      insertDimension: {
-        range: {
-          sheetId,
-          dimension: "ROWS",
-          startIndex: at,
-          endIndex: at + 1,
-        },
-        inheritFromBefore: at > 0,
-      },
-    });
-  }
-  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, requests);
-
-  const valueRows = dateLabels.map((ngay) => [ngay, false, "", "", "", ""]);
-  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
-    {
-      updateCells: {
-        range: {
-          sheetId,
-          startRowIndex: insertAt,
-          endRowIndex: insertAt + dateLabels.length,
-          startColumnIndex: 0,
-          endColumnIndex: DATA_COLS,
-        },
-        rows: valueRows.map((cells) => ({
-          values: cells.map((v) => {
-            if (typeof v === "boolean") return { userEnteredValue: { boolValue: v } };
-            return { userEnteredValue: { stringValue: String(v) } };
-          }),
-        })),
-        fields: "userEnteredValue",
-      },
-    },
-  ]);
-}
-
-/** Đảm bảo một ngày cụ thể có dòng trên tab (chèn nếu thiếu). */
-export async function ensureDateRowForTab(
-  accessToken: string,
-  spreadsheetId: string,
-  tabName: string,
-  target: DateParts,
-): Promise<boolean> {
-  await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
-  const q = quoteSheet(tabName);
-  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-  const rows = batch[tabName] ?? [];
-  if (dateExistsInRows(rows, target)) return false;
-
-  const ngay = formatParts(target);
-  const insertAt = findInsertIndexForNewDates(rows);
-  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, [ngay]);
-  return true;
-}
-
-/** Thêm dòng ngày — luôn chèn sát header (hàng 2), không append cuối Table. */
-export async function ensureTodayDateRowsForTab(
-  accessToken: string,
-  spreadsheetId: string,
-  tabName: string,
-  unixSec?: number,
-): Promise<number> {
-  await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
-
-  const q = quoteSheet(tabName);
-  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-  const rows = batch[tabName] ?? [];
-  const today = todayParts(unixSec);
-  if (today.y <= 0) return 0;
-  if (dateExistsInRows(rows, today)) return 0;
-
-  const last = findLastDateInRows(rows);
-  const toAdd = datesToAddUntilToday(last, today);
-  if (!toAdd.length) return 0;
-
-  const insertAt = findInsertIndexForNewDates(rows);
-  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, toAdd);
-  return toAdd.length;
 }
 
 async function sheetIdForTitle(
@@ -327,6 +177,258 @@ async function sheetIdForTitle(
     }
   }
   return null;
+}
+
+async function deleteTablesOnTab(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<void> {
+  const tables = await sheetsSpreadsheetTables(accessToken, spreadsheetId);
+  const onTab = tables.filter((t) => t.sheetTitle === tabName);
+  if (!onTab.length) return;
+  await sheetsSpreadsheetBatchUpdate(
+    accessToken,
+    spreadsheetId,
+    onTab.map((t) => ({ deleteTable: { tableId: t.tableId } })),
+  );
+}
+
+async function findTableOnTab(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<{ tableId: string; sheetId: number } | null> {
+  const tables = await sheetsSpreadsheetTables(accessToken, spreadsheetId);
+  const t = tables.find((x) => x.sheetTitle === tabName);
+  if (!t?.tableId || t.sheetId == null) return null;
+  return { tableId: t.tableId, sheetId: t.sheetId };
+}
+
+/**
+ * Gom các dòng ngày lên sát header (hàng 2).
+ * Nếu có Google Table thì xóa Table trước (không thể cắt/chèn hàng trong Table).
+ */
+export async function compactChamCongDateRowsToTop(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<boolean> {
+  const q = quoteSheet(tabName);
+  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+  const rows = batch[tabName] ?? [];
+  const { dataStart, firstDateIdx, dateRows } = collectDateDataRows(rows);
+  if (firstDateIdx < 0) return false;
+  if (firstDateIdx === dataStart) return false;
+
+  const sheetId = await sheetIdForTitle(accessToken, spreadsheetId, tabName);
+  if (sheetId == null) return false;
+
+  try {
+    await deleteTablesOnTab(accessToken, spreadsheetId, tabName);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[ChamCong] delete table before compact ${tabName}: ${msg}`);
+  }
+
+  // Giữ F2: chỉ clear A:E rồi ghi lại A:E; F giữ nguyên
+  await sheetsValuesClear(accessToken, spreadsheetId, `${q}!A${dataStart + 1}:E${MAX_SCAN_ROW}`);
+  if (dateRows.length > 0) {
+    const aeOnly = dateRows.map((r) => r.slice(0, 5));
+    await sheetsPutValues(
+      accessToken,
+      spreadsheetId,
+      `${q}!A${dataStart + 1}`,
+      aeOnly,
+      "USER_ENTERED",
+    );
+  }
+
+  const oldLast = findLastNonemptyRowIndex(rows);
+  const newLast = dataStart + dateRows.length - 1;
+  if (oldLast > newLast) {
+    try {
+      await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: newLast + 1,
+              endIndex: oldLast + 1,
+            },
+          },
+        },
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[ChamCong] compact delete rows ${tabName}: ${msg}`);
+    }
+  }
+  return true;
+}
+
+function findInsertIndexForNewDates(rows: unknown[][]): number {
+  const dataStart = firstDataRowIndex(rows);
+  let lastDateIdx = -1;
+  for (let i = dataStart; i < rows.length; i++) {
+    const p = parseVietnamDateCell(rows[i]?.[0]);
+    if (p) lastDateIdx = i;
+  }
+  if (lastDateIdx >= dataStart) return lastDateIdx + 1;
+  return dataStart;
+}
+
+/**
+ * Thêm dòng ngày:
+ * - Có Google Table → appendCells (đúng cho SUBEO)
+ * - Không Table → insertDimension sau dòng ngày cuối
+ */
+async function insertDateRowsAt(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+  insertAt: number,
+  dateLabels: string[],
+): Promise<void> {
+  if (!dateLabels.length) return;
+  const q = quoteSheet(tabName);
+
+  const table = await findTableOnTab(accessToken, spreadsheetId, tabName);
+  if (table?.tableId) {
+    try {
+      for (const ngay of dateLabels) {
+        await sheetsAppendTableRow(accessToken, spreadsheetId, table.tableId, [
+          ngay,
+          false,
+          "",
+          "",
+          "",
+          "",
+        ]);
+      }
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[ChamCong] table append ${tabName} failed, fallback insert: ${msg}`);
+    }
+  }
+
+  const sheetId = table?.sheetId ?? (await sheetIdForTitle(accessToken, spreadsheetId, tabName));
+  if (sheetId == null) {
+    for (const ngay of dateLabels) {
+      await sheetsValuesAppend(
+        accessToken,
+        spreadsheetId,
+        `${q}!A:F`,
+        [[ngay, false, "", "", "", ""]],
+        "USER_ENTERED",
+      );
+    }
+    return;
+  }
+
+  try {
+    const requests: unknown[] = [];
+    for (let n = 0; n < dateLabels.length; n++) {
+      const at = insertAt + n;
+      requests.push({
+        insertDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: at,
+            endIndex: at + 1,
+          },
+          inheritFromBefore: at > 0,
+        },
+      });
+    }
+    await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, requests);
+
+    const valueRows = dateLabels.map((ngay) => [ngay, false, "", "", "", ""]);
+    await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+      {
+        updateCells: {
+          range: {
+            sheetId,
+            startRowIndex: insertAt,
+            endRowIndex: insertAt + dateLabels.length,
+            startColumnIndex: 0,
+            endColumnIndex: DATA_COLS,
+          },
+          rows: valueRows.map((cells) => ({
+            values: cells.map((v) => {
+              if (typeof v === "boolean") return { userEnteredValue: { boolValue: v } };
+              return { userEnteredValue: { stringValue: String(v) } };
+            }),
+          })),
+          fields: "userEnteredValue",
+        },
+      },
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[ChamCong] insertDimension ${tabName} failed, values.append: ${msg}`);
+    for (const ngay of dateLabels) {
+      await sheetsValuesAppend(
+        accessToken,
+        spreadsheetId,
+        `${q}!A:F`,
+        [[ngay, false, "", "", "", ""]],
+        "USER_ENTERED",
+      );
+    }
+  }
+}
+
+/** Đảm bảo một ngày cụ thể có dòng trên tab (chèn nếu thiếu). */
+export async function ensureDateRowForTab(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+  target: DateParts,
+): Promise<boolean> {
+  await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
+  const q = quoteSheet(tabName);
+  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+  const rows = batch[tabName] ?? [];
+  if (dateExistsInRows(rows, target)) return false;
+
+  const ngay = formatParts(target);
+  const insertAt = findInsertIndexForNewDates(rows);
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, [ngay]);
+  return true;
+}
+
+/** Thêm dòng ngày tới hôm nay (SUBEO + tab NV). */
+export async function ensureTodayDateRowsForTab(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+  unixSec?: number,
+): Promise<number> {
+  try {
+    await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[ChamCong] compact ${tabName}: ${msg}`);
+  }
+
+  const q = quoteSheet(tabName);
+  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+  const rows = batch[tabName] ?? [];
+  const today = todayParts(unixSec);
+  if (today.y <= 0) return 0;
+  if (dateExistsInRows(rows, today)) return 0;
+
+  const last = findLastDateInRows(rows);
+  const toAdd = datesToAddUntilToday(last, today);
+  if (!toAdd.length) return 0;
+
+  const insertAt = findInsertIndexForNewDates(rows);
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, toAdd);
+  return toAdd.length;
 }
 
 /** Thêm dòng ngày mới cho mọi tab nhân viên (SUBEO gồm). */
