@@ -9,6 +9,7 @@ import {
 import { HH_LOAI_TRU_TAB, parseHhLoaiTruSheetRows } from "../lib/hhLoaiTru";
 import {
   listChamCongEmployeeTabs,
+  clearAccidentalNotesFromTyGiaColumn,
 } from "../lib/chamCongSheet";
 import { ensureTodayDateRowsAllTabs } from "../lib/chamCongDateRoll";
 import { loadPayrollStatusMap } from "../lib/luongNvPayrollStatus";
@@ -305,6 +306,16 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       }
 
       luongNvConfig = buildLuongNvConfig(chamBatch.tyGia, chamBatch.tyGiaSourceTab);
+
+      // Dọn ghi chú nhầm cột F (TỈ GIÁ) — vd. «Giữ nguyên ứng» trên SUBEO
+      for (const tab of chamBatch.employeeTitles) {
+        try {
+          await clearAccidentalNotesFromTyGiaColumn(token, idChamCong, tab);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn(`[Sheets] clear F notes ${tab}: ${msg}`);
+        }
+      }
 
       const preloaded = new Map(
         chamBatch.attendanceSheets.map((s) => [s.sheetTitle, s.rows] as const),

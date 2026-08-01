@@ -3,6 +3,8 @@ import {
   sheetsListTabTitles,
   sheetsPutValues,
   sheetsSpreadsheetBatchUpdate,
+  sheetsSpreadsheetTables,
+  sheetsValuesClear,
 } from "./google";
 import { num } from "./thuChiSheet";
 
@@ -62,26 +64,80 @@ async function getSheetIdByTitle(
   return meta?.sheetId ?? null;
 }
 
+/** Xóa Google Tables trên tab — tránh lỗi deleteDimension khi cắt hàng. */
+async function deleteTablesOnTab(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<void> {
+  const tables = await sheetsSpreadsheetTables(accessToken, spreadsheetId);
+  const onTab = tables.filter((t) => t.sheetTitle === tabName);
+  if (!onTab.length) return;
+  await sheetsSpreadsheetBatchUpdate(
+    accessToken,
+    spreadsheetId,
+    onTab.map((t) => ({ deleteTable: { tableId: t.tableId } })),
+  );
+}
+
+/**
+ * Xóa chữ ghi chú nhầm vào cột F (TỈ GIÁ) — vd. «Giữ nguyên ứng».
+ * Giữ F2 (công thức tỉ giá) và ô số.
+ */
+export async function clearAccidentalNotesFromTyGiaColumn(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<number> {
+  const q = quoteSheet(tabName);
+  const formulaPart = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!F1:F${MAX_ROW}`], "FORMULA");
+  const cells = formulaPart[tabName] ?? [];
+  const clearTargets: string[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    if (i === 0) continue; // header
+    if (i === 1) continue; // F2 tỉ giá
+    const raw = cells[i]?.[0];
+    if (raw == null || raw === "") continue;
+    if (typeof raw === "number") continue;
+    const s = String(raw).trim();
+    if (!s) continue;
+    if (s.startsWith("=")) continue;
+    if (/^[\d.,\s$₫usdVND-]+$/i.test(s)) continue;
+    clearTargets.push(`${q}!F${i + 1}`);
+  }
+  for (const range of clearTargets) {
+    await sheetsValuesClear(accessToken, spreadsheetId, range);
+  }
+  return clearTargets.length;
+}
+
 /** Giữ header (hàng 1) + 1 hàng dữ liệu — xóa phần thừa copy từ tab mẫu. */
 async function trimChamCongSheetToTwoRows(
   accessToken: string,
   spreadsheetId: string,
   tabName: string,
 ): Promise<void> {
+  await deleteTablesOnTab(accessToken, spreadsheetId, tabName);
   const meta = await getSheetMeta(accessToken, spreadsheetId, tabName);
   if (!meta || meta.rowCount <= 2) return;
-  await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
-    {
-      deleteDimension: {
-        range: {
-          sheetId: meta.sheetId,
-          dimension: "ROWS",
-          startIndex: 2,
-          endIndex: meta.rowCount,
+  try {
+    await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
+      {
+        deleteDimension: {
+          range: {
+            sheetId: meta.sheetId,
+            dimension: "ROWS",
+            startIndex: 2,
+            endIndex: meta.rowCount,
+          },
         },
       },
-    },
-  ]);
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[ChamCong] trim rows ${tabName} failed, clear values: ${msg}`);
+    await sheetsValuesClear(accessToken, spreadsheetId, `${quoteSheet(tabName)}!A3:F${MAX_ROW}`);
+  }
 }
 
 /** Tab mẫu copy khi tạo tab NV mới (SUBEO vẫn tính lương như NV). */
@@ -120,7 +176,14 @@ async function readTemplateF2ForCopy(
 
   const valuePart = await sheetsBatchGet(accessToken, spreadsheetId, [range]);
   const valueCell = valuePart[templateTab]?.[0]?.[0];
-  if (valueCell !== "" && valueCell != null) return String(valueCell);
+  if (typeof valueCell === "number" && valueCell > 0) return String(valueCell);
+  if (
+    typeof valueCell === "string" &&
+    valueCell.trim() &&
+    !/giữ nguyên|khấu trừ|đã tt/i.test(valueCell)
+  ) {
+    return valueCell;
+  }
 
   return DEFAULT_TY_GIA_FORMULA;
 }
@@ -144,7 +207,7 @@ async function copyTemplateF2ToTab(
 
 /**
  * Tạo tab nhân viên — duplicate SUBEO (cấu trúc D/E…).
- * F2 copy công thức từ SUBEO!F2; reset dòng dữ liệu từ hàng 3 và A2:B2.
+ * Xóa Table + cắt còn 2 hàng; F2 = công thức tỉ giá.
  */
 export async function createChamCongEmployeeTab(
   accessToken: string,
@@ -171,6 +234,13 @@ export async function createChamCongEmployeeTab(
     throw new Error(`Không tìm thấy tab mẫu « ${templateTab} ».`);
   }
 
+  try {
+    await clearAccidentalNotesFromTyGiaColumn(accessToken, spreadsheetId, templateTab);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[ChamCong] clear F notes on ${templateTab}: ${msg}`);
+  }
+
   await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
     { duplicateSheet: { sourceSheetId: sourceId, newSheetName: name } },
   ]);
@@ -178,6 +248,7 @@ export async function createChamCongEmployeeTab(
   await trimChamCongSheetToTwoRows(accessToken, spreadsheetId, name);
 
   const q = quoteSheet(name);
+  await sheetsValuesClear(accessToken, spreadsheetId, `${q}!A2:F2`);
   const today = formatNgayVietnam();
   await sheetsPutValues(accessToken, spreadsheetId, `${q}!A2:B2`, [[today, "FALSE"]], "USER_ENTERED");
   await copyTemplateF2ToTab(accessToken, spreadsheetId, name, templateTab);
@@ -187,7 +258,7 @@ export async function deleteChamCongEmployeeTab(
   accessToken: string,
   spreadsheetId: string,
   tabName: string,
-  templateTab: string = CHAM_CONG_TEMPLATE_TAB,
+  _templateTab: string = CHAM_CONG_TEMPLATE_TAB,
 ): Promise<void> {
   const name = tabName.trim();
   if (!name) throw new Error("Thiếu tên tab.");

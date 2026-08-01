@@ -160,7 +160,6 @@ async function writeAdvanceToFirstDay(
   attendanceRows: unknown[][],
   todayIso: string,
   amountUsd: number,
-  note: string,
 ): Promise<void> {
   const currentMonth = todayIso.slice(0, 7);
   const rowIdx = findRowIndexForMonthDay(attendanceRows, currentMonth, 1);
@@ -171,19 +170,13 @@ async function writeAdvanceToFirstDay(
   }
   const sheetRow = rowIdx + 1;
   const newCUsd = amountUsd > 0.009 ? amountUsd : 0;
+  // Chỉ ghi cột C (tiền ứng). Không ghi cột F — F là TỈ GIÁ; ghi chú lưu tab LUONG_TT.
   await sheetsPutValues(
     accessToken,
     spreadsheetIdChamCong,
     `${quoteSheet(tabName)}!C${sheetRow}`,
     [[newCUsd]],
     "RAW",
-  );
-  await sheetsPutValues(
-    accessToken,
-    spreadsheetIdChamCong,
-    `${quoteSheet(tabName)}!F${sheetRow}`,
-    [[note]],
-    "USER_ENTERED",
   );
 }
 
@@ -215,7 +208,6 @@ export async function markSalaryPaid(
       attendanceRows,
       todayIso,
       carryUsd,
-      note,
     );
   }
 
@@ -233,7 +225,7 @@ export async function markSalaryPaid(
 
 /**
  * Khấu trừ tiền ứng: ứng mới = ứng cũ − tổng lương.
- * Ghi cột C (và ghi chú cột F) ngày 01 tháng hiện tại trên tab NV.
+ * Ghi cột C ngày 01 tháng hiện tại trên tab NV (ghi chú lưu LUONG_TT).
  */
 export async function deductAdvanceForEmployee(
   accessToken: string,
@@ -259,7 +251,6 @@ export async function deductAdvanceForEmployee(
     attendanceRows,
     todayIso,
     carryRemainingUsd > 0.009 ? carryRemainingUsd : 0,
-    note,
   );
 
   const prev = payrollStatusFor(existingMap, payrollMonthIso, tabName);
