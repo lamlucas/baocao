@@ -1,6 +1,11 @@
 import type { Env } from "../env";
 import { getSheetsAccessToken, sheetsBatchGet, sheetsBatchGetMergeSafe, sheetsBatchUpdate, sheetsValuesAppend } from "../lib/google";
 import {
+  formatLuongChiTelegramReply,
+  parseLuongChiBlockMessage,
+  processLuongChiTelegramPayment,
+} from "../lib/luongChiPayment";
+import {
   buildCocAppendRows,
   buildCongNoAppendRows,
   buildThuChiAppendRow,
@@ -19,6 +24,12 @@ const SHEET_BAO_CAO_TK = "BAO_CAO_TK";
 
 const CHAT_THU_CHI_DEFAULT = "-1003727898214";
 const CHAT_BAO_CAO_DEFAULT = "-1003992397667";
+const DEFAULT_SPREADSHEET_ID_CHAM_CONG = "1rZYkgdY6C4Tf1tOjqBw0hwkVE7pLGQlQSNS21ikjZ-w";
+
+function spreadsheetIdChamCong(env: Env): string {
+  const v = (env as { SPREADSHEET_ID_CHAM_CONG?: string }).SPREADSHEET_ID_CHAM_CONG?.trim();
+  return v || DEFAULT_SPREADSHEET_ID_CHAM_CONG;
+}
 
 function thuChiChatId(env: Env): string {
   const v = (env as { TELEGRAM_THU_CHI_CHAT_ID?: string }).TELEGRAM_THU_CHI_CHAT_ID;
@@ -411,15 +422,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   const congNoBlock = parseCongNoMessage(text);
   const cocBlock = parseCocMessage(text);
+  const luongChiBlock = parseLuongChiBlockMessage(text);
   const thuChiOne = parseThuChiMessage(text);
 
-  if (!congNoBlock && !cocBlock && !thuChiOne) {
+  if (!congNoBlock && !cocBlock && !luongChiBlock && !thuChiOne) {
     return Response.json({ ok: true, ignored: true });
   }
 
   try {
     const token = await getSheetsAccessToken(env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const idMain = env.SPREADSHEET_ID_MAIN;
+
+    if (luongChiBlock) {
+      const payDateIso = formatNgayFromTelegram(unix);
+      const result = await processLuongChiTelegramPayment(
+        env.GOOGLE_SERVICE_ACCOUNT_JSON,
+        idMain,
+        spreadsheetIdChamCong(env),
+        luongChiBlock,
+        payDateIso,
+      );
+      await telegramSendMessage(botToken, chatId, formatLuongChiTelegramReply(result));
+      return Response.json({ ok: true, kind: "luong_chi" });
+    }
 
     const batchTq = await sheetsBatchGet(token, idMain, [`'${SHEET_TQ}'!A1:E2`]);
     const batchMainTabs = await sheetsBatchGetMergeSafe(token, idMain, [`'${SHEET_COC}'!A1:E2000`]);

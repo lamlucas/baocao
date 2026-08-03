@@ -10,7 +10,7 @@ import { flexibleDateToIso, num } from "./thuChiSheet";
 /** Hoa hồng = (thu − chi) × 1%. */
 export const HOA_HONG_RATE = 0.01;
 
-export type ThuChiRow = { ngay: string; thu: string; chi: string; ghiChu: string };
+export type ThuChiRow = { ngay: string; thu: string; chi: string; ten?: string; ghiChu: string };
 
 export type AttendanceSheetRows = { sheetTitle: string; rows: unknown[][] };
 
@@ -24,7 +24,7 @@ export type LuongNvEmployeeRow = {
   commissionStartDate?: string;
   /** Tổng lương = Lương CB + HH − Phạt + Thưởng (chưa trừ ứng). */
   tongLuongUsd: number;
-  /** Thực nhận = Tổng lương − Tiền ứng. */
+  /** Thực nhận = Tổng lương − Tiền ứng − Chi Lương (THU_CHI). */
   thucNhanUsd: number;
   /** @deprecated Dùng thucNhanUsd — giữ tương thích JSON cũ. */
   totalSalaryUsd?: number;
@@ -34,6 +34,8 @@ export type LuongNvEmployeeRow = {
   tienThuongUsd: number;
   /** Tiền ứng trừ trong kỳ (USD) — tổng cột C theo tháng (carry ngày 1 do bot ghi). */
   tienUngUsd: number;
+  /** Tổng Chi «Lương» THU_CHI khớp tên NV trong kỳ (USD). */
+  luongChiPaidUsd?: number;
   /** Phần ứng chưa trừ hết — ghi vào cột C ngày đầu tháng sau (chỉ tháng trước). */
   tienUngCarryOutUsd?: number;
 };
@@ -317,6 +319,40 @@ export function sumBonusInMonth(
   return sumUsdColumnInMonth(rows, monthIso, cutoffDay, 4);
 }
 
+function employeeNameMatches(haystack: string, employeeTabName: string): boolean {
+  const h = haystack.trim().toLowerCase().replace(/\s+/g, " ");
+  const n = employeeTabName.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!h || !n) return false;
+  return h === n || h.includes(n) || n.includes(h);
+}
+
+function isLuongChiNote(note: string): boolean {
+  return /^lương$/i.test(String(note ?? "").trim());
+}
+
+/** Tổng Chi THU_CHI ghi chú «Lương» khớp tên tab NV trong kỳ lương. */
+export function sumSalaryChiPaidInMonth(
+  thuChi: ThuChiRow[],
+  monthIso: string,
+  employeeTabName: string,
+  cutoffDay: number | null,
+): number {
+  let total = 0;
+  for (const r of thuChi) {
+    const iso = flexibleDateToIso(r.ngay ?? "");
+    if (!iso || monthFromIsoDate(iso) !== monthIso) continue;
+    const day = dayOfMonthFromIso(iso);
+    if (cutoffDay != null && day > cutoffDay) continue;
+    const chi = num(r.chi);
+    if (chi <= 0) continue;
+    if (!isLuongChiNote(r.ghiChu ?? "")) continue;
+    const ten = String(r.ten ?? "").trim();
+    if (!ten || !employeeNameMatches(ten, employeeTabName)) continue;
+    total += chi;
+  }
+  return total;
+}
+
 function sumUsdColumnInMonth(
   rows: unknown[][],
   monthIso: string,
@@ -375,13 +411,19 @@ export function aggregateThuChiMonth(
     if (cutoffDay != null && day > cutoffDay) continue;
     const thu = num(r.thu);
     const chi = num(r.chi);
-    if (chi > 0 && isChiExcludedByHhLoaiTruRules(r, hhLoaiTruRules)) {
+    if (chi > 0 && isChiExcludedByHhLoaiTruRules(
+      { ngay: r.ngay, thu: r.thu, chi: r.chi, ten: r.ten, ghiChu: r.ghiChu },
+      hhLoaiTruRules,
+    )) {
       chiExcludedHhLoaiTru += chi;
     } else {
       tongChi += chi;
     }
     if (noThuDaySet.has(iso)) continue;
-    if (isThuExcludedByHhLoaiTruRules(r, hhLoaiTruRules)) {
+    if (isThuExcludedByHhLoaiTruRules(
+      { ngay: r.ngay, thu: r.thu, chi: r.chi, ten: r.ten, ghiChu: r.ghiChu },
+      hhLoaiTruRules,
+    )) {
       thuExcludedHhLoaiTru += thu;
       continue;
     }
@@ -450,7 +492,13 @@ function buildPeriod(
       excludeThuDatesIso,
     );
     const tongLuongUsd = baseSalaryUsd + empCommissionUsd - tienPhatUsd + tienThuongUsd;
-    const thucNhanUsd = tongLuongUsd - tienUngUsd;
+    const luongChiPaidUsd = sumSalaryChiPaidInMonth(
+      thuChi,
+      monthIso,
+      sheet.sheetTitle,
+      cutoffDay,
+    );
+    const thucNhanUsd = tongLuongUsd - tienUngUsd - luongChiPaidUsd;
     const row: LuongNvEmployeeRow = {
       name: sheet.sheetTitle,
       workingDays,
@@ -464,6 +512,7 @@ function buildPeriod(
       tienThuongUsd,
       tienUngUsd,
     };
+    if (luongChiPaidUsd > 0.009) row.luongChiPaidUsd = luongChiPaidUsd;
     if (commissionStartIso) row.commissionStartDate = commissionStartIso;
     if (kind === "previous" && carryOutUsd > 0.009) {
       row.tienUngCarryOutUsd = carryOutUsd;

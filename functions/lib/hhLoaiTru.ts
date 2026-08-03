@@ -1,4 +1,5 @@
 import { flexibleDateToIso, isoToSheetDateSerial, num, sheetsSerialToIsoDate, stringifySheetRow } from "./thuChiSheet";
+import { sheetsValuesAppend } from "./google";
 
 export const HH_LOAI_TRU_TAB = "HH_LOAI_TRU";
 
@@ -18,7 +19,15 @@ export type HhLoaiTruRule = {
   ngayDisplay?: string;
 };
 
-export type ThuChiMatchRow = { ngay: string; thu: string; chi: string; ghiChu: string };
+export type ThuChiMatchRow = {
+  ngay: string;
+  thu: string;
+  chi: string;
+  /** Cột D THU_CHI (Tên). */
+  ten?: string;
+  /** Cột E THU_CHI (Ghi chú). */
+  ghiChu: string;
+};
 
 type HhLoaiTruLayout = "sheet" | "legacy";
 
@@ -39,11 +48,19 @@ function datesMatch(rowNgay: string, ruleNgay: string): boolean {
   return Boolean(iso && ruleIso && iso === ruleIso);
 }
 
-/** Khớp Tên hoặc Note với THU_CHI cột D (ghi chú). */
-function ruleMatchesGhiChu(rule: HhLoaiTruRule, ghiChu: string): boolean {
-  if (rule.tenDaiLy && nameMatches(ghiChu, rule.tenDaiLy)) return true;
-  if (rule.note && nameMatches(ghiChu, rule.note)) return true;
-  return false;
+/** Khớp Tên (cột D) và/hoặc Ghi chú (cột E) THU_CHI với rule HH_LOAI_TRU. */
+function ruleMatchesThuChiRow(rule: HhLoaiTruRule, row: ThuChiMatchRow): boolean {
+  const ten = String(row.ten ?? "").trim();
+  const ghiChu = String(row.ghiChu ?? "").trim();
+  const nameOk =
+    !rule.tenDaiLy ||
+    (ten && nameMatches(ten, rule.tenDaiLy)) ||
+    (ghiChu && nameMatches(ghiChu, rule.tenDaiLy));
+  const noteOk =
+    !rule.note ||
+    (ghiChu && nameMatches(ghiChu, rule.note)) ||
+    (ten && nameMatches(ten, rule.note));
+  return nameOk && noteOk;
 }
 
 /** Khớp rule với một dòng THU_CHI (A ngày, B thu, D ghi chú). */
@@ -52,17 +69,17 @@ export function thuChiRowMatchesHhLoaiTruThuRule(row: ThuChiMatchRow, rule: HhLo
   const khoanThu = num(rule.khoanThu);
   if (thu <= 0 || khoanThu <= 0) return false;
   if (!datesMatch(row.ngay ?? "", rule.ngay ?? "")) return false;
-  if (!ruleMatchesGhiChu(rule, row.ghiChu ?? "")) return false;
+  if (!ruleMatchesThuChiRow(rule, row)) return false;
   return Math.abs(thu - khoanThu) <= 0.009;
 }
 
-/** Khớp rule với một dòng THU_CHI (A ngày, C chi, D ghi chú). */
+/** Khớp rule với một dòng THU_CHI (A ngày, C chi, D tên, E ghi chú). */
 export function thuChiRowMatchesHhLoaiTruChiRule(row: ThuChiMatchRow, rule: HhLoaiTruRule): boolean {
   const chi = num(row.chi);
   const khoanChi = num(rule.khoanChi);
   if (chi <= 0 || khoanChi <= 0) return false;
   if (!datesMatch(row.ngay ?? "", rule.ngay ?? "")) return false;
-  if (!ruleMatchesGhiChu(rule, row.ghiChu ?? "")) return false;
+  if (!ruleMatchesThuChiRow(rule, row)) return false;
   return Math.abs(chi - khoanChi) <= 0.009;
 }
 
@@ -258,6 +275,23 @@ export function normalizeHhLoaiTruInput(raw: unknown): HhLoaiTruRule | null {
     khoanThuDisplay: thuDisplay,
     khoanChiDisplay: chiDisplay,
   };
+}
+
+/** Append dòng HH_LOAI_TRU mới (không đọc lại Sheet). */
+export async function appendHhLoaiTruRulesToSheet(
+  accessToken: string,
+  spreadsheetId: string,
+  rules: HhLoaiTruRule[],
+): Promise<void> {
+  if (!rules.length) return;
+  const q = `'${HH_LOAI_TRU_TAB.replace(/'/g, "''")}'`;
+  await sheetsValuesAppend(
+    accessToken,
+    spreadsheetId,
+    `${q}!A:E`,
+    rules.map((r) => hhLoaiTruRowValues(r)),
+    "RAW",
+  );
 }
 
 export function normalizeHhLoaiTruList(raw: unknown): HhLoaiTruRule[] {

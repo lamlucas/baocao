@@ -407,19 +407,37 @@ export async function ensureTodayDateRowsForTab(
   spreadsheetId: string,
   tabName: string,
   unixSec?: number,
+  preloadedRows?: unknown[][],
 ): Promise<number> {
-  try {
-    await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[ChamCong] compact ${tabName}: ${msg}`);
-  }
-
-  const q = quoteSheet(tabName);
-  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-  const rows = batch[tabName] ?? [];
   const today = todayParts(unixSec);
   if (today.y <= 0) return 0;
+
+  let rows = preloadedRows;
+  if (!rows) {
+    try {
+      await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[ChamCong] compact ${tabName}: ${msg}`);
+    }
+    const q = quoteSheet(tabName);
+    const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+    rows = batch[tabName] ?? [];
+  } else {
+    const { firstDateIdx, dataStart } = collectDateDataRows(rows);
+    if (firstDateIdx >= 0 && firstDateIdx > dataStart) {
+      try {
+        await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
+        const q = quoteSheet(tabName);
+        const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+        rows = batch[tabName] ?? [];
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[ChamCong] compact ${tabName}: ${msg}`);
+      }
+    }
+  }
+
   if (dateExistsInRows(rows, today)) return 0;
 
   const last = findLastDateInRows(rows);
@@ -436,16 +454,24 @@ export async function ensureTodayDateRowsAllTabs(
   accessToken: string,
   spreadsheetId: string,
   unixSec?: number,
-  _preloaded?: Map<string, unknown[][]>,
+  preloaded?: Map<string, unknown[][]>,
 ): Promise<{ tabs: number; rowsAdded: number }> {
   const titles = listChamCongEmployeeTabs(
-    await sheetsListTabTitles(accessToken, spreadsheetId),
+    preloaded && preloaded.size > 0
+      ? [...preloaded.keys()]
+      : await sheetsListTabTitles(accessToken, spreadsheetId),
   );
   let rowsAdded = 0;
   for (const tab of titles) {
     if (isChamCongSystemTab(tab)) continue;
     try {
-      rowsAdded += await ensureTodayDateRowsForTab(accessToken, spreadsheetId, tab, unixSec);
+      rowsAdded += await ensureTodayDateRowsForTab(
+        accessToken,
+        spreadsheetId,
+        tab,
+        unixSec,
+        preloaded?.get(tab),
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[ChamCong] roll dates ${tab}: ${msg}`);
