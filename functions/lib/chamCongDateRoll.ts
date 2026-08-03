@@ -124,29 +124,102 @@ function dateExistsInRows(rows: unknown[][], target: DateParts): boolean {
   return false;
 }
 
+function cellHasValue(cell: unknown): boolean {
+  return cell !== "" && cell != null && cell !== false;
+}
+
+function mergeChamCongDateRow(existing: unknown[], incoming: unknown[]): unknown[] {
+  const pick = (a: unknown, b: unknown): unknown => {
+    if (typeof b === "number" && Number.isFinite(b) && b !== 0) return b;
+    if (typeof a === "number" && Number.isFinite(a) && a !== 0) return a;
+    const bs = String(b ?? "").trim();
+    if (bs) return b;
+    const as = String(a ?? "").trim();
+    if (as) return a;
+    return b ?? a;
+  };
+  return [
+    incoming[0] ?? existing[0],
+    incoming[1] === true || existing[1] === true,
+    pick(existing[2], incoming[2]),
+    pick(existing[3], incoming[3]),
+    pick(existing[4], incoming[4]),
+    pick(existing[5], incoming[5]),
+  ];
+}
+
+function countParseableDateRows(rows: unknown[][]): number {
+  let n = 0;
+  const dataStart = firstDataRowIndex(rows);
+  for (let i = dataStart; i < rows.length; i++) {
+    if (parseVietnamDateCell(rows[i]?.[0])) n++;
+  }
+  return n;
+}
+
+function hasDuplicateOrGapDateRows(rows: unknown[][]): boolean {
+  const dataStart = firstDataRowIndex(rows);
+  const seen = new Set<number>();
+  for (let i = dataStart; i < rows.length; i++) {
+    const row = rows[i] ?? [];
+    const p = parseVietnamDateCell(row[0]);
+    if (!p) {
+      if (row.some((c) => cellHasValue(c))) return true;
+      continue;
+    }
+    const k = dateKey(p);
+    if (seen.has(k)) return true;
+    seen.add(k);
+  }
+  return false;
+}
+
+function filterNewDateLabels(rows: unknown[][], dateLabels: string[]): string[] {
+  return dateLabels.filter((ngay) => {
+    const p = parseVietnamDateCell(ngay);
+    return p != null && !dateExistsInRows(rows, p);
+  });
+}
+
+async function loadTabRows(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<unknown[][]> {
+  const q = quoteSheet(tabName);
+  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
+  return batch[tabName] ?? [];
+}
+
 function collectDateDataRows(rows: unknown[][]): {
   dataStart: number;
   firstDateIdx: number;
   dateRows: unknown[][];
 } {
   const dataStart = firstDataRowIndex(rows);
-  const dateRows: unknown[][] = [];
+  const byKey = new Map<number, unknown[]>();
   let firstDateIdx = -1;
   for (let i = dataStart; i < rows.length; i++) {
     const row = rows[i] ?? [];
     const p = parseVietnamDateCell(row[0]);
     if (!p) continue;
     if (firstDateIdx < 0) firstDateIdx = i;
-    // Không copy cột F (tỉ giá) — F2 giữ công thức; các dòng khác F trống
-    dateRows.push([
+    const k = dateKey(p);
+    const formatted: unknown[] = [
       formatParts(p),
       row[1] ?? false,
       row[2] ?? "",
       row[3] ?? "",
       row[4] ?? "",
       "",
-    ]);
+    ];
+    const prev = byKey.get(k);
+    byKey.set(k, prev ? mergeChamCongDateRow(prev, formatted) : formatted);
   }
+  const dateRows = [...byKey.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, r]) => r);
+  if (dateRows.length > 0 && firstDateIdx < 0) firstDateIdx = dataStart;
   return { dataStart, firstDateIdx, dateRows };
 }
 
@@ -215,11 +288,13 @@ export async function compactChamCongDateRowsToTop(
   tabName: string,
 ): Promise<boolean> {
   const q = quoteSheet(tabName);
-  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-  const rows = batch[tabName] ?? [];
+  const rows = await loadTabRows(accessToken, spreadsheetId, tabName);
   const { dataStart, firstDateIdx, dateRows } = collectDateDataRows(rows);
   if (firstDateIdx < 0) return false;
-  if (firstDateIdx === dataStart) return false;
+  const rawDateCount = countParseableDateRows(rows);
+  const needsDedupe = rawDateCount > dateRows.length || hasDuplicateOrGapDateRows(rows);
+  const needsCompact = firstDateIdx > dataStart;
+  if (!needsDedupe && !needsCompact) return false;
 
   const sheetId = await sheetIdForTitle(accessToken, spreadsheetId, tabName);
   if (sheetId == null) return false;
@@ -382,6 +457,15 @@ async function insertDateRowsAt(
   }
 }
 
+/** Sửa tab chấm công: gom ngày lên đầu, xóa trùng / dòng trống lẻ. */
+export async function repairChamCongDateRowsForTab(
+  accessToken: string,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<boolean> {
+  return compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
+}
+
 /** Đảm bảo một ngày cụ thể có dòng trên tab (chèn nếu thiếu). */
 export async function ensureDateRowForTab(
   accessToken: string,
@@ -390,14 +474,14 @@ export async function ensureDateRowForTab(
   target: DateParts,
 ): Promise<boolean> {
   await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
-  const q = quoteSheet(tabName);
-  const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-  const rows = batch[tabName] ?? [];
+  const rows = await loadTabRows(accessToken, spreadsheetId, tabName);
   if (dateExistsInRows(rows, target)) return false;
 
   const ngay = formatParts(target);
+  const toAdd = filterNewDateLabels(rows, [ngay]);
+  if (!toAdd.length) return false;
   const insertAt = findInsertIndexForNewDates(rows);
-  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, [ngay]);
+  await insertDateRowsAt(accessToken, spreadsheetId, tabName, insertAt, toAdd);
   return true;
 }
 
@@ -413,24 +497,23 @@ export async function ensureTodayDateRowsForTab(
   if (today.y <= 0) return 0;
 
   let rows = preloadedRows;
-  if (!rows) {
+  const preHasToday = rows ? dateExistsInRows(rows, today) : false;
+  const preNeedsRepair = rows ? hasDuplicateOrGapDateRows(rows) : false;
+
+  if (!rows || preNeedsRepair) {
     try {
       await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[ChamCong] compact ${tabName}: ${msg}`);
     }
-    const q = quoteSheet(tabName);
-    const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-    rows = batch[tabName] ?? [];
+    rows = await loadTabRows(accessToken, spreadsheetId, tabName);
   } else {
     const { firstDateIdx, dataStart } = collectDateDataRows(rows);
     if (firstDateIdx >= 0 && firstDateIdx > dataStart) {
       try {
         await compactChamCongDateRowsToTop(accessToken, spreadsheetId, tabName);
-        const q = quoteSheet(tabName);
-        const batch = await sheetsBatchGet(accessToken, spreadsheetId, [`${q}!A1:F${MAX_SCAN_ROW}`]);
-        rows = batch[tabName] ?? [];
+        rows = await loadTabRows(accessToken, spreadsheetId, tabName);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.warn(`[ChamCong] compact ${tabName}: ${msg}`);
@@ -440,8 +523,14 @@ export async function ensureTodayDateRowsForTab(
 
   if (dateExistsInRows(rows, today)) return 0;
 
+  // Preload có thể cũ — đọc lại trước khi chèn để tránh ngày trùng (Set, SUBEO…)
+  if (preloadedRows && !preHasToday) {
+    rows = await loadTabRows(accessToken, spreadsheetId, tabName);
+    if (dateExistsInRows(rows, today)) return 0;
+  }
+
   const last = findLastDateInRows(rows);
-  const toAdd = datesToAddUntilToday(last, today);
+  const toAdd = filterNewDateLabels(rows, datesToAddUntilToday(last, today));
   if (!toAdd.length) return 0;
 
   const insertAt = findInsertIndexForNewDates(rows);
