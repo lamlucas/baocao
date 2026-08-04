@@ -53,13 +53,16 @@ export function isValidPayrollTabName(tabName: unknown): boolean {
 
 function isCorruptLuongTtDataRow(row: unknown[]): boolean {
   if (!Array.isArray(row)) return true;
-  const monthRaw = String(row[0] ?? "").trim();
+  const monthRaw = row[0];
+  const monthStr = String(monthRaw ?? "").trim();
   const tabRaw = row[1];
-  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{4}$/.test(monthRaw)) return true;
+  const iso = flexibleDateToIso(monthStr);
+  if (iso.length >= 10 && /^\d{4}-\d{2}-\d{2}$/.test(iso)) return true;
+  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{4}$/.test(monthStr)) return true;
   if (tabRaw === false || tabRaw === true) return true;
   if (String(tabRaw).trim().toLowerCase() === "false") return true;
   if (!isValidPayrollTabName(tabRaw)) return true;
-  if (!/^\d{4}-\d{2}/.test(monthRaw)) return true;
+  if (!/^\d{4}-\d{2}$/.test(monthStr.slice(0, 7))) return true;
   return false;
 }
 

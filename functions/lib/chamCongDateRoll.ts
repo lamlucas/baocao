@@ -369,10 +369,17 @@ async function insertDateRowsAt(
   if (!dateLabels.length) return;
   const q = quoteSheet(tabName);
 
+  let rows = await loadTabRows(accessToken, spreadsheetId, tabName);
+  let toWrite = filterNewDateLabels(rows, dateLabels);
+  if (!toWrite.length) return;
+
   const table = await findTableOnTab(accessToken, spreadsheetId, tabName);
   if (table?.tableId) {
     try {
-      for (const ngay of dateLabels) {
+      for (const ngay of toWrite) {
+        rows = await loadTabRows(accessToken, spreadsheetId, tabName);
+        toWrite = filterNewDateLabels(rows, [ngay]);
+        if (!toWrite.length) continue;
         await sheetsAppendTableRow(accessToken, spreadsheetId, table.tableId, [
           ngay,
           false,
@@ -389,9 +396,14 @@ async function insertDateRowsAt(
     }
   }
 
+  rows = await loadTabRows(accessToken, spreadsheetId, tabName);
+  toWrite = filterNewDateLabels(rows, dateLabels);
+  if (!toWrite.length) return;
+  insertAt = findInsertIndexForNewDates(rows);
+
   const sheetId = table?.sheetId ?? (await sheetIdForTitle(accessToken, spreadsheetId, tabName));
   if (sheetId == null) {
-    for (const ngay of dateLabels) {
+    for (const ngay of toWrite) {
       await sheetsValuesAppend(
         accessToken,
         spreadsheetId,
@@ -405,7 +417,7 @@ async function insertDateRowsAt(
 
   try {
     const requests: unknown[] = [];
-    for (let n = 0; n < dateLabels.length; n++) {
+    for (let n = 0; n < toWrite.length; n++) {
       const at = insertAt + n;
       requests.push({
         insertDimension: {
@@ -415,20 +427,20 @@ async function insertDateRowsAt(
             startIndex: at,
             endIndex: at + 1,
           },
-          inheritFromBefore: at > 0,
+          inheritFromBefore: false,
         },
       });
     }
     await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, requests);
 
-    const valueRows = dateLabels.map((ngay) => [ngay, false, "", "", "", ""]);
+    const valueRows = toWrite.map((ngay) => [ngay, false, "", "", "", ""]);
     await sheetsSpreadsheetBatchUpdate(accessToken, spreadsheetId, [
       {
         updateCells: {
           range: {
             sheetId,
             startRowIndex: insertAt,
-            endRowIndex: insertAt + dateLabels.length,
+            endRowIndex: insertAt + toWrite.length,
             startColumnIndex: 0,
             endColumnIndex: DATA_COLS,
           },
@@ -445,7 +457,7 @@ async function insertDateRowsAt(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`[ChamCong] insertDimension ${tabName} failed, values.append: ${msg}`);
-    for (const ngay of dateLabels) {
+    for (const ngay of toWrite) {
       await sheetsValuesAppend(
         accessToken,
         spreadsheetId,
@@ -550,6 +562,23 @@ export async function ensureTodayDateRowsAllTabs(
       ? [...preloaded.keys()]
       : await sheetsListTabTitles(accessToken, spreadsheetId),
   );
+
+  for (const tab of titles) {
+    if (isChamCongSystemTab(tab)) continue;
+    const rows = preloaded?.get(tab);
+    if (!rows || hasDuplicateOrGapDateRows(rows)) {
+      try {
+        await repairChamCongDateRowsForTab(accessToken, spreadsheetId, tab);
+        if (preloaded) {
+          preloaded.set(tab, await loadTabRows(accessToken, spreadsheetId, tab));
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[ChamCong] repair ${tab}: ${msg}`);
+      }
+    }
+  }
+
   let rowsAdded = 0;
   for (const tab of titles) {
     if (isChamCongSystemTab(tab)) continue;

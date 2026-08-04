@@ -11,7 +11,7 @@ import {
   listChamCongEmployeeTabs,
 } from "../lib/chamCongSheet";
 import { ensureTodayDateRowsAllTabs } from "../lib/chamCongDateRoll";
-import { loadPayrollStatusMap } from "../lib/luongNvPayrollStatus";
+import { loadPayrollStatusMap, repairLuongTtTab } from "../lib/luongNvPayrollStatus";
 import { syncAdvanceCarryToFirstDayAllTabs } from "../lib/tienUngCarrySync";
 import { buildLuongNvConfig, CHAM_CONG_TEMPLATE_TAB } from "../lib/luongNvConfig";
 import {
@@ -291,6 +291,13 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       }
 
       luongNvConfig = buildLuongNvConfig(chamBatch.tyGia, chamBatch.tyGiaSourceTab);
+
+      try {
+        await repairLuongTtTab(token, idChamCong);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[Sheets] repair LUONG_TT: ${msg}`);
+      }
 
       const preloaded = new Map(
         chamBatch.attendanceSheets.map((s) => [s.sheetTitle, s.rows] as const),
