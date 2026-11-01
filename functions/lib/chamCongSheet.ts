@@ -291,7 +291,14 @@ export async function readTyGiaF2(
   spreadsheetId: string,
   tabName: string,
 ): Promise<number> {
-  const part = await sheetsBatchGet(accessToken, spreadsheetId, [`${quoteSheet(tabName)}!F2`]);
+  let part: Awaited<ReturnType<typeof sheetsBatchGet>>;
+  try {
+    part = await sheetsBatchGet(accessToken, spreadsheetId, [`${quoteSheet(tabName)}!F2`]);
+  } catch (e) {
+    // Tab không tồn tại (vd. SU_BEO cũ đã đổi tên) → bỏ qua, thử tab kế tiếp.
+    if (String(e instanceof Error ? e.message : e).includes("Unable to parse range")) return 0;
+    throw e;
+  }
   const row = part[tabName]?.[0];
   return num(row?.[0]);
 }
